@@ -101,6 +101,7 @@ def _build_status() -> dict:
                 "arbitrage": {"enabled": Config.ENABLE_ARBITRAGE, "pnl": 0, "trades": 0, "wins": 0, "losses": 0},
                 "streak": {"enabled": Config.ENABLE_STREAK, "pnl": 0, "trades": 0, "wins": 0, "losses": 0},
                 "copytrade": {"enabled": Config.ENABLE_COPYTRADE, "pnl": 0, "trades": 0, "wins": 0, "losses": 0},
+                "panic_reversal": {"enabled": getattr(Config, 'ENABLE_PANIC_REVERSAL', True), "pnl": 0, "trades": 0, "wins": 0, "losses": 0},
             },
             "active_markets": [m.value for m in Config.ACTIVE_MARKETS],
             "all_markets": _all_markets_status(),
@@ -120,7 +121,7 @@ def _build_status() -> dict:
     status = bot.get_status()
 
     # Per-strategy stats from trade history
-    strat_stats = {"arbitrage": _empty_strat(), "streak": _empty_strat(), "copytrade": _empty_strat()}
+    strat_stats = {"arbitrage": _empty_strat(), "streak": _empty_strat(), "copytrade": _empty_strat(), "panic_reversal": _empty_strat()}
     for t in bot.state.trades:
         s = t.strategy if t.strategy in strat_stats else "copytrade"
         if s not in strat_stats:
@@ -317,7 +318,7 @@ async def stop_bot():
 
 @app.post("/api/strategy/{name}/enable")
 async def enable_strategy(name: str):
-    if name not in ("arbitrage", "streak", "copytrade"):
+    if name not in ("arbitrage", "streak", "copytrade", "panic_reversal"):
         return JSONResponse({"error": "Unknown strategy"}, status_code=400)
     strategy_overrides[name] = True
     # Apply to Config at runtime
@@ -327,13 +328,15 @@ async def enable_strategy(name: str):
         Config.ENABLE_STREAK = True
     elif name == "copytrade":
         Config.ENABLE_COPYTRADE = True
+    elif name == "panic_reversal":
+        Config.ENABLE_PANIC_REVERSAL = True
     await _broadcast_status()
     return JSONResponse({"success": True, "strategy": name, "enabled": True})
 
 
 @app.post("/api/strategy/{name}/disable")
 async def disable_strategy(name: str):
-    if name not in ("arbitrage", "streak", "copytrade"):
+    if name not in ("arbitrage", "streak", "copytrade", "panic_reversal"):
         return JSONResponse({"error": "Unknown strategy"}, status_code=400)
     strategy_overrides[name] = False
     if name == "arbitrage":
@@ -342,6 +345,8 @@ async def disable_strategy(name: str):
         Config.ENABLE_STREAK = False
     elif name == "copytrade":
         Config.ENABLE_COPYTRADE = False
+    elif name == "panic_reversal":
+        Config.ENABLE_PANIC_REVERSAL = False
     await _broadcast_status()
     return JSONResponse({"success": True, "strategy": name, "enabled": False})
 

@@ -169,7 +169,7 @@ class BotEngine:
 
         # Track bets placed per market to avoid duplicates
         self._bet_timestamps: dict[str, set[int]] = {}  # strategy -> set of timestamps
-        for s in ["arbitrage", "streak", "copytrade"]:
+        for s in ["arbitrage", "streak", "copytrade", "panic_reversal"]:
             self._bet_timestamps[s] = set()
 
         # Session stats
@@ -276,6 +276,9 @@ class BotEngine:
             self._tasks.append(asyncio.create_task(self._latency_arb_loop()))
             if self._chainlink_feed:
                 self._tasks.append(asyncio.create_task(self._chainlink_divergence_loop()))
+
+        if getattr(Config, 'ENABLE_PANIC_REVERSAL', True) and self._arb_strategy:
+            self._tasks.append(asyncio.create_task(self._panic_reversal_loop()))
 
         if Config.ENABLE_STREAK:
             self._tasks.append(asyncio.create_task(self._streak_loop()))
@@ -555,6 +558,93 @@ class BotEngine:
                 log(f"[CHAINLINK] Error: {e}")
                 await asyncio.sleep(2)
 
+    # ─── Panic Reversal Strategy Loop ─────────────────────────────────────
+
+    async def _panic_reversal_loop(self):
+        """Layer 4: Scan for extreme prices and buy cheap sides as lottery tickets.
+
+        Atlas strategy: when BTC moves fast, one side drops to $0.03-$0.07.
+        Buy it for pennies. If BTC snaps back → 14x-33x payoff.
+        Most bets lose. The math still works: ~1 in 10 hit rate, 10-33x payoff.
+        """
+        log("[PANIC] 🎰 Panic reversal loop active (Layer 4: Lottery Tickets)")
+
+        while self.running:
+            try:
+                can_trade, reason = self.state.can_trade()
+                if not can_trade:
+                    await asyncio.sleep(5)
+                    continue
+
+                if not self._arb_strategy:
+                    await asyncio.sleep(5)
+                    continue
+
+                scanner = self._arb_strategy.panic_scanner
+
+                # Get all active markets
+                markets = self.client.get_all_active_markets()
+
+                # Scan for extreme prices
+                signals = scanner.scan(markets)
+
+                for signal in signals:
+                    ts_key = f"{signal.market.slug}_{signal.cheap_side}"
+                    if ts_key in self._bet_timestamps["panic_reversal"]:
+                        continue
+
+                    amount = signal.recommended_size
+                    amount = max(Config.MIN_BET, min(amount, getattr(Config, 'PANIC_BET_SIZE', 3.0) * 2))
+
+                    trade = self.trader.place_bet(
+                        market=signal.market,
+                        direction=signal.cheap_side,
+                        amount=amount,
+                        strategy="panic_reversal",
+                        confidence=signal.mean_reversion_score,
+                    )
+
+                    if trade:
+                        self._bet_timestamps["panic_reversal"].add(ts_key)
+                        position = scanner.open_position(signal, amount)
+
+                        log(f"[PANIC] 🎰 BUY {signal.cheap_side.upper()} ${amount:.2f} @ "
+                            f"${signal.price:.3f} on {signal.market.slug} | "
+                            f"Potential: {signal.potential_multiplier:.0f}x | "
+                            f"Time left: {signal.time_left_seconds}s | "
+                            f"Vol: {signal.volatility_regime}")
+
+                        self.events.emit(Event(EventType.TRADE_PLACED, {
+                            "trade_id": trade.id,
+                            "strategy": "panic_reversal",
+                            "direction": signal.cheap_side,
+                            "amount": amount,
+                            "entry_price": signal.price,
+                            "potential_multiplier": signal.potential_multiplier,
+                            "volatility_regime": signal.volatility_regime,
+                        }))
+
+                # Check take-profit on active positions
+                for position in scanner.get_active_positions():
+                    if position.token_id:
+                        current = self.client.get_price(position.token_id)
+                        if current and scanner.check_take_profit(position, current):
+                            scanner.settle_position(position, "", exit_reason="take_profit")
+                            log(f"[PANIC] 💰 TAKE PROFIT on {position.market_slug}: "
+                                f"{position.current_multiplier:.1f}x | PnL: ${position.pnl:+.2f}")
+
+                # Cleanup old settled positions
+                scanner.cleanup_settled()
+
+                await asyncio.sleep(5)  # Scan every 5 seconds
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log(f"[PANIC] Error: {e}")
+                self.events.emit(Event(EventType.ERROR, {"strategy": "panic_reversal", "error": str(e)}))
+                await asyncio.sleep(5)
+
     def max_position_usd(self) -> float:
         """Max position size based on bankroll."""
         return self.state.bankroll * Config.MAX_POSITION_SIZE_PCT
@@ -793,6 +883,14 @@ class BotEngine:
                             # Release arb exposure
                             if trade.strategy == "arbitrage" and self._arb_strategy:
                                 self._arb_strategy.release_exposure(trade.amount)
+
+                            # Settle panic reversal positions
+                            if trade.strategy == "panic_reversal" and self._arb_strategy:
+                                for pos in self._arb_strategy.panic_scanner.active_positions:
+                                    if pos.market_slug == trade.market_slug and not pos.settled:
+                                        self._arb_strategy.panic_scanner.settle_position(
+                                            pos, market.outcome, exit_reason="settlement"
+                                        )
 
                             # Feed outcome to Bayesian model for self-learning
                             if self._arb_strategy and hasattr(self._arb_strategy, 'bayesian_model'):

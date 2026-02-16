@@ -31,6 +31,7 @@ from src.core.polymarket import Market, PolymarketClient, MarketDataCache
 from src.strategies.spread_farmer import SpreadFarmer, SpreadCycle
 from src.strategies.latency_arb import LatencyArb, LatencyArbSignal, MomentumSignal
 from src.strategies.bayesian_model import BayesianModel
+from src.strategies.panic_reversal import PanicReversalScanner
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -282,6 +283,9 @@ class ArbitrageStrategy:
         self.spread_farmer = SpreadFarmer(client=client, market_cache=market_cache)
         self.spread_farmer.bayesian_model = self.bayesian_model
 
+        # Layer 4: Panic Reversal
+        self.panic_scanner = PanicReversalScanner(bayesian_model=self.bayesian_model)
+
         # Layer 2: Latency Arb
         self.latency_arb = LatencyArb(
             client=client,
@@ -526,6 +530,7 @@ class ArbitrageStrategy:
             "layers": {
                 "spread_farmer": self.spread_farmer.get_stats(),
                 "latency_arb": self.latency_arb.get_stats(),
+                "panic_reversal": self.panic_scanner.get_stats(),
             },
             **self.stats.to_dict(),
         }

@@ -176,6 +176,15 @@ class Config:
     ENABLE_STREAK: bool = os.getenv("ENABLE_STREAK", "true").lower() == "true"
     ENABLE_COPYTRADE: bool = os.getenv("ENABLE_COPYTRADE", "false").lower() == "true"
     ENABLE_SELECTIVE: bool = os.getenv("ENABLE_SELECTIVE", "false").lower() == "true"
+    ENABLE_PANIC_REVERSAL: bool = os.getenv("ENABLE_PANIC_REVERSAL", "true").lower() == "true"
+
+    # ===== PANIC REVERSAL (Layer 4) =====
+    PANIC_MAX_ENTRY_PRICE: float = float(os.getenv("PANIC_MAX_ENTRY_PRICE", "0.10"))
+    PANIC_BET_SIZE: float = float(os.getenv("PANIC_BET_SIZE", "3.0"))
+    PANIC_MAX_CONCURRENT: int = int(os.getenv("PANIC_MAX_CONCURRENT", "3"))
+    PANIC_MAX_DAILY_SPEND: float = float(os.getenv("PANIC_MAX_DAILY_SPEND", "50.0"))
+    PANIC_MIN_TIME_LEFT: int = int(os.getenv("PANIC_MIN_TIME_LEFT", "60"))
+    PANIC_TAKE_PROFIT_MULTIPLIER: float = float(os.getenv("PANIC_TAKE_PROFIT_MULTIPLIER", "3.0"))
 
     # ===== ARBITRAGE SETTINGS =====
     ARB_THRESHOLD: float = float(os.getenv("ARB_THRESHOLD", "0.98"))
