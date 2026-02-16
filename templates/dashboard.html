@@ -134,6 +134,58 @@
     </div>
 </div>
 
+<!-- ════════════════════════ PAPER TRADING ════════════════════════ -->
+<div id="paper-banner" class="hidden rounded-xl px-5 py-3 text-center font-semibold text-sm" style="background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.3);color:#c4b5fd">
+    📝 PAPER TRADING MODE ACTIVE — Virtual money only
+</div>
+
+<div class="card card-glow rounded-xl p-5">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+            <span class="text-lg">📝</span> Paper Trading
+        </h2>
+        <div class="flex items-center gap-3">
+            <button onclick="exportPaperTrades()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-navy-700 hover:bg-navy-600 transition text-gray-300" title="Export trade log">
+                📥 Export
+            </button>
+            <button onclick="resetPaper()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-navy-700 hover:bg-navy-600 transition text-gray-300" title="Reset paper trading">
+                🔄 Reset
+            </button>
+            <button id="paper-toggle-btn" onclick="togglePaper()" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200" style="background:#7c3aed;color:#fff">
+                Start Paper
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
+        <div>
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Virtual Bankroll</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-bankroll">$1,000.00</div>
+        </div>
+        <div>
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Virtual P&L</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-pnl">$0.00</div>
+        </div>
+        <div>
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Win Rate</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-winrate">0%</div>
+        </div>
+        <div>
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Trades</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-trades-count">0</div>
+        </div>
+        <div>
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Drawdown</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-drawdown">0%</div>
+        </div>
+    </div>
+
+    <!-- Paper trade log -->
+    <div class="trade-log space-y-1 font-mono text-xs" id="paper-trade-log" style="max-height:200px">
+        <div class="text-gray-600 py-4 text-center">No paper trades yet</div>
+    </div>
+</div>
+
 <!-- ════════════════════════ LIVE TRADE LOG ════════════════════════ -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div class="card card-glow rounded-xl p-5">
@@ -293,6 +345,9 @@ function updateDashboard(d) {
 
     // Markets
     renderMarkets(d.all_markets || {});
+
+    // Paper trading
+    updatePaperSection(d.paper_trading);
 }
 
 function renderStrategies(strats) {
@@ -495,6 +550,84 @@ async function saveSettings() {
     closeSettings();
 }
 
+// ═══════════════════════════ PAPER TRADING ═══════════════════════════
+let paperRunning = false;
+
+function updatePaperSection(pt) {
+    if (!pt) return;
+    paperRunning = pt.running;
+    const stats = pt.stats || {};
+
+    // Banner
+    const banner = document.getElementById('paper-banner');
+    if (pt.running) {
+        banner.classList.remove('hidden');
+    } else {
+        banner.classList.add('hidden');
+    }
+
+    // Toggle button
+    const btn = document.getElementById('paper-toggle-btn');
+    if (pt.running) {
+        btn.textContent = 'Stop Paper';
+        btn.style.background = '#dc2626';
+    } else {
+        btn.textContent = 'Start Paper';
+        btn.style.background = '#7c3aed';
+    }
+
+    // Stats
+    setText('paper-bankroll', '$' + num(stats.bankroll || 0));
+    const pnlEl = document.getElementById('paper-pnl');
+    const pnlVal = stats.total_pnl || 0;
+    pnlEl.textContent = pnlSign(pnlVal);
+    pnlEl.className = pnlVal > 0 ? 'text-xl font-bold font-mono mt-1 text-emerald-400' : pnlVal < 0 ? 'text-xl font-bold font-mono mt-1 text-red-400' : 'text-xl font-bold font-mono mt-1 text-gray-400';
+    setText('paper-winrate', num(stats.win_rate || 0, 1) + '%');
+    setText('paper-trades-count', stats.total_trades || 0);
+    setText('paper-drawdown', num(stats.drawdown_pct || 0, 1) + '%');
+}
+
+async function togglePaper() {
+    const url = paperRunning ? '/api/paper/stop' : '/api/paper/start';
+    const res = await fetch(url, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) alert(data.error);
+    // Refresh paper trades
+    loadPaperTrades();
+}
+
+async function loadPaperTrades() {
+    try {
+        const res = await fetch('/api/paper/trades?limit=30');
+        const data = await res.json();
+        const log = document.getElementById('paper-trade-log');
+        if (!data.trades || data.trades.length === 0) {
+            log.innerHTML = '<div class="text-gray-600 py-4 text-center">No paper trades yet</div>';
+            return;
+        }
+        log.innerHTML = data.trades.map(t => {
+            const isWin = t.won === true;
+            const isLoss = t.won === false && t.outcome !== 'PENDING';
+            const color = isWin ? 'text-emerald-400' : isLoss ? 'text-red-400' : 'text-yellow-400';
+            const icon = isWin ? '✓' : isLoss ? '✗' : '◌';
+            const time = t.timestamp ? t.timestamp.split(' ')[1] : '';
+            return `<div class="${color} py-0.5">${time} ${icon} [${t.strategy}] ${t.direction} $${num(t.amount)} @ ${num(t.price,4)} → ${t.outcome} ${pnlSign(t.pnl)}</div>`;
+        }).join('');
+    } catch (e) {}
+}
+
+function exportPaperTrades() {
+    window.open('/api/paper/export', '_blank');
+}
+
+async function resetPaper() {
+    if (!confirm('Reset paper trading? This will clear all paper trades and reset bankroll.')) return;
+    const res = await fetch('/api/paper/reset', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) alert(data.error);
+    loadPaperTrades();
+}
+
 // ═══════════════════════════ HELPERS ═══════════════════════════
 function setText(id, v) { document.getElementById(id).textContent = v; }
 function num(v, d=2) { return (v || 0).toFixed(d); }
@@ -508,6 +641,8 @@ function colorPnl(id, v) {
 // ═══════════════════════════ INIT ═══════════════════════════
 connectWS();
 loadTrades();
+loadPaperTrades();
+setInterval(loadPaperTrades, 10000);
 </script>
 </body>
 </html>

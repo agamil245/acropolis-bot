@@ -258,6 +258,10 @@ class Config:
     WEB_HOST: str = os.getenv("WEB_HOST", "0.0.0.0")
     WEB_SECRET_KEY: str = os.getenv("WEB_SECRET_KEY", "change_me_in_production")
 
+    # ===== PAPER TRADING (Independent Mode) =====
+    PAPER_INITIAL_BANKROLL: float = float(os.getenv("PAPER_INITIAL_BANKROLL", "1000.0"))
+    PAPER_LOG_FILE: str = os.getenv("PAPER_LOG_FILE", "paper_trades.json")
+
     # ===== FILES =====
     LOG_FILE: str = "acropolis.log"
     TRADES_FILE: str = "trades.json"

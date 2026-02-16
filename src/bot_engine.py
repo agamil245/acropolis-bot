@@ -24,6 +24,7 @@ from src.core.trader import (
     PaperTrader, LiveTrader, TradingState, Trade,
     kelly_size, fixed_bet_size,
 )
+from src.core.paper_trader import PaperTradingEngine
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -147,6 +148,11 @@ class BotEngine:
             self.trader = PaperTrader(self.state, self.market_cache)
         else:
             self.trader = LiveTrader(self.state, self.market_cache)
+
+        # Independent paper trading engine (separate from main bot mode)
+        self.paper_engine = PaperTradingEngine(market_cache=self.market_cache)
+        self.paper_running = False
+        self._paper_task: Optional[asyncio.Task] = None
 
         # Import strategies lazily to avoid circular imports
         self._arb_strategy = None
@@ -663,6 +669,42 @@ class BotEngine:
                 log(f"[♥] Heartbeat error: {e}")
                 await asyncio.sleep(30)
 
+    # ─── Paper Trading (Independent) ─────────────────────────────────────
+
+    async def start_paper(self):
+        """Start independent paper trading settlement loop."""
+        if self.paper_running:
+            return
+        self.paper_running = True
+        self.paper_engine.state.running = True
+        self._paper_task = asyncio.create_task(self._paper_settlement_loop())
+        log("📝 Paper trading mode STARTED")
+
+    async def stop_paper(self):
+        """Stop independent paper trading."""
+        self.paper_running = False
+        self.paper_engine.state.running = False
+        if self._paper_task:
+            self._paper_task.cancel()
+            try:
+                await self._paper_task
+            except asyncio.CancelledError:
+                pass
+            self._paper_task = None
+        log("📝 Paper trading mode STOPPED")
+
+    async def _paper_settlement_loop(self):
+        """Check paper trade settlements periodically."""
+        while self.paper_running:
+            try:
+                self.paper_engine.check_settlements()
+                await asyncio.sleep(Config.SETTLEMENT_CHECK_INTERVAL)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log(f"[PAPER-SIM] Settlement loop error: {e}")
+                await asyncio.sleep(10)
+
     # ─── Status & Control ─────────────────────────────────────────────────
 
     def get_status(self) -> dict:
@@ -674,6 +716,10 @@ class BotEngine:
         return {
             "running": self.running,
             "mode": "PAPER" if Config.PAPER_TRADE else "LIVE",
+            "paper_trading": {
+                "running": self.paper_running,
+                "stats": self.paper_engine.state.get_stats(),
+            },
             "uptime_seconds": uptime,
             "active_markets": [m.value for m in Config.ACTIVE_MARKETS],
             "strategies": {

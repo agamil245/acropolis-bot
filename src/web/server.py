@@ -105,6 +105,16 @@ def _build_status() -> dict:
             "active_markets": [m.value for m in Config.ACTIVE_MARKETS],
             "all_markets": _all_markets_status(),
             "websocket_connected": False,
+            "paper_trading": {
+                "running": False,
+                "stats": {
+                    "bankroll": Config.PAPER_INITIAL_BANKROLL,
+                    "initial_bankroll": Config.PAPER_INITIAL_BANKROLL,
+                    "peak_bankroll": Config.PAPER_INITIAL_BANKROLL,
+                    "total_pnl": 0, "win_rate": 0, "wins": 0, "losses": 0,
+                    "total_trades": 0, "pending_trades": 0, "settled_trades": 0, "drawdown_pct": 0,
+                },
+            },
         }
 
     status = bot.get_status()
@@ -146,6 +156,13 @@ def _build_status() -> dict:
         "all_markets": _all_markets_status(),
         "websocket_connected": status.get("websocket_connected", False),
         "session": status.get("session", {}),
+        "paper_trading": status.get("paper_trading", {
+            "running": False,
+            "stats": {"bankroll": Config.PAPER_INITIAL_BANKROLL, "total_pnl": 0, "win_rate": 0,
+                       "wins": 0, "losses": 0, "total_trades": 0, "pending_trades": 0,
+                       "settled_trades": 0, "initial_bankroll": Config.PAPER_INITIAL_BANKROLL,
+                       "peak_bankroll": Config.PAPER_INITIAL_BANKROLL, "drawdown_pct": 0},
+        }),
     }
 
 
@@ -321,6 +338,71 @@ async def disable_market(market_id: str):
     Config.ACTIVE_MARKETS = [m for m in Config.ACTIVE_MARKETS if m != mt]
     await _broadcast_status()
     return JSONResponse({"success": True, "market": market_id, "enabled": False})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAPER TRADING (Independent)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/paper/start")
+async def start_paper():
+    global bot
+    if not bot:
+        bot = BotEngine()
+    if bot.paper_running:
+        return JSONResponse({"error": "Paper trading already running"}, status_code=400)
+    await bot.start_paper()
+    await _broadcast_status()
+    return JSONResponse({"success": True, "message": "Paper trading started"})
+
+
+@app.post("/api/paper/stop")
+async def stop_paper():
+    if not bot or not bot.paper_running:
+        return JSONResponse({"error": "Paper trading not running"}, status_code=400)
+    await bot.stop_paper()
+    await _broadcast_status()
+    return JSONResponse({"success": True, "message": "Paper trading stopped"})
+
+
+@app.get("/api/paper/stats")
+async def get_paper_stats():
+    if not bot:
+        return JSONResponse({"bankroll": Config.PAPER_INITIAL_BANKROLL, "total_pnl": 0,
+                             "win_rate": 0, "wins": 0, "losses": 0,
+                             "total_trades": 0, "pending_trades": 0, "settled_trades": 0,
+                             "initial_bankroll": Config.PAPER_INITIAL_BANKROLL,
+                             "peak_bankroll": Config.PAPER_INITIAL_BANKROLL, "drawdown_pct": 0})
+    return JSONResponse(bot.paper_engine.state.get_stats())
+
+
+@app.get("/api/paper/trades")
+async def get_paper_trades(limit: int = Query(50, ge=1, le=500)):
+    if not bot:
+        return JSONResponse({"trades": []})
+    return JSONResponse({"trades": bot.paper_engine.get_recent_trades(limit)})
+
+
+@app.get("/api/paper/export")
+async def export_paper_trades():
+    """Export full paper trade history as JSON download."""
+    if not bot:
+        return JSONResponse({"trades": []})
+    trades = bot.paper_engine.get_trades_json()
+    return JSONResponse(trades, headers={
+        "Content-Disposition": "attachment; filename=paper_trades_export.json"
+    })
+
+
+@app.post("/api/paper/reset")
+async def reset_paper():
+    if not bot:
+        return JSONResponse({"error": "Bot not initialized"}, status_code=400)
+    if bot.paper_running:
+        return JSONResponse({"error": "Stop paper trading before resetting"}, status_code=400)
+    bot.paper_engine.reset()
+    await _broadcast_status()
+    return JSONResponse({"success": True, "message": "Paper trading reset"})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
