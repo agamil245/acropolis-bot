@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AcropolisBot - Trading Dashboard</title>
+    <title>AcropolisBot — Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -11,347 +11,503 @@
             theme: {
                 extend: {
                     colors: {
-                        dark: {
-                            bg: '#0f172a',
-                            card: '#1e293b',
-                            border: '#334155',
-                        }
-                    }
+                        navy: { 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569' },
+                        profit: '#10b981',
+                        loss: '#ef4444',
+                        accent: '#6366f1',
+                    },
+                    fontFamily: { mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'] },
                 }
             }
         }
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        * { font-family: 'Inter', system-ui, sans-serif; }
+        body { background: #080d1a; }
+        .card {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(51, 65, 85, 0.4);
+            backdrop-filter: blur(12px);
         }
-        .glass {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(51, 65, 85, 0.5);
-        }
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 8px;
-        }
-        .status-running { background: #10b981; animation: pulse 2s infinite; }
-        .status-stopped { background: #ef4444; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
+        .card-glow { box-shadow: 0 0 0 1px rgba(99,102,241,0.08), 0 4px 24px rgba(0,0,0,0.3); }
+        .pulse-green { animation: pulseG 2s ease-in-out infinite; }
+        @keyframes pulseG { 0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.4)} 50%{box-shadow:0 0 0 8px rgba(16,185,129,0)} }
+        .pulse-red { animation: pulseR 2s ease-in-out infinite; }
+        @keyframes pulseR { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
+        .toggle-track { width:44px; height:24px; border-radius:12px; transition:background .2s; cursor:pointer; position:relative; }
+        .toggle-track.on { background:#10b981; }
+        .toggle-track.off { background:#475569; }
+        .toggle-thumb { width:20px; height:20px; border-radius:50%; background:#fff; position:absolute; top:2px; transition:left .2s; }
+        .toggle-track.on .toggle-thumb { left:22px; }
+        .toggle-track.off .toggle-thumb { left:2px; }
+        .trade-log { max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+        .trade-log::-webkit-scrollbar { width:6px; }
+        .trade-log::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
+        .shimmer { background: linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.05) 50%, transparent 100%); background-size: 200% 100%; animation: shimmer 2s infinite; }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .ws-badge { font-size:10px; padding:2px 8px; border-radius:9999px; }
+        .fade-in { animation: fadeIn .3s ease; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+        .modal-bg { background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); }
     </style>
 </head>
-<body class="min-h-screen p-6 text-white">
-    <div class="max-w-7xl mx-auto">
-        <!-- Header -->
-        <div class="glass rounded-lg p-6 mb-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold mb-2">⚡ AcropolisBot</h1>
-                    <p class="text-gray-400">Advanced Polymarket Trading Bot</p>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <div id="bot-status" class="flex items-center text-lg">
-                        <span class="status-dot status-stopped" id="status-dot"></span>
-                        <span id="status-text">Stopped</span>
-                    </div>
-                    <button id="start-btn" onclick="startBot()" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-semibold transition">
-                        Start Bot
-                    </button>
-                    <button id="stop-btn" onclick="stopBot()" class="bg-red-600 hover:bg-red-700 px-6 py-2 rounded-lg font-semibold transition hidden">
-                        Stop Bot
-                    </button>
-                </div>
-            </div>
+<body class="min-h-screen text-gray-100">
+
+<!-- ════════════════════════════════ TOP BAR ════════════════════════════════ -->
+<header class="sticky top-0 z-50 border-b border-navy-700/50" style="background:rgba(8,13,26,0.92);backdrop-filter:blur(16px)">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">⚡ AcropolisBot</div>
+            <span id="mode-badge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 uppercase tracking-wider">PAPER</span>
         </div>
-
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="glass rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-2">Bankroll</div>
-                <div class="text-3xl font-bold" id="bankroll">$100.00</div>
-                <div class="text-sm mt-2" id="total-pnl">Total P&L: $0.00</div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div id="ws-indicator" class="w-2 h-2 rounded-full bg-gray-600"></div>
+                <span id="ws-text" class="text-xs text-gray-500">Connecting…</span>
             </div>
-            <div class="glass rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-2">Win Rate</div>
-                <div class="text-3xl font-bold" id="win-rate">0%</div>
-                <div class="text-sm mt-2" id="win-loss">0W / 0L</div>
+            <div class="flex items-center gap-2">
+                <div id="status-dot" class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span id="status-text" class="text-sm font-medium">Stopped</span>
             </div>
-            <div class="glass rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-2">Daily P&L</div>
-                <div class="text-3xl font-bold" id="daily-pnl">$0.00</div>
-                <div class="text-sm mt-2" id="daily-bets">0 bets today</div>
-            </div>
-            <div class="glass rounded-lg p-6">
-                <div class="text-gray-400 text-sm mb-2">Active Trades</div>
-                <div class="text-3xl font-bold" id="pending-trades">0</div>
-                <div class="text-sm mt-2" id="total-trades">0 total</div>
-            </div>
+            <button id="bot-toggle-btn" onclick="toggleBot()" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30">
+                Start Bot
+            </button>
+            <button onclick="openSettings()" class="p-2 rounded-lg hover:bg-navy-700/60 transition" title="Settings">
+                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
         </div>
+    </div>
+</header>
 
-        <!-- Strategies & Markets -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Strategies -->
-            <div class="glass rounded-lg p-6">
-                <h2 class="text-xl font-bold mb-4">📊 Active Strategies</h2>
-                <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                        <span>⚡ Micro-Arbitrage</span>
-                        <span id="arb-status" class="text-green-400">Enabled</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span>📈 Streak Reversal</span>
-                        <span id="streak-status" class="text-green-400">Enabled</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span>📋 Copytrade</span>
-                        <span id="copy-status" class="text-gray-500">Disabled</span>
-                    </div>
-                </div>
-                
-                <div class="mt-6 pt-4 border-t border-gray-700">
-                    <h3 class="text-sm font-semibold mb-3 text-gray-400">Strategy Performance</h3>
-                    <div class="space-y-2 text-sm">
-                        <div class="flex justify-between">
-                            <span>Arbitrage:</span>
-                            <span id="arb-pnl" class="font-mono">$0.00</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span>Streak:</span>
-                            <span id="streak-pnl" class="font-mono">$0.00</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span>Copytrade:</span>
-                            <span id="copy-pnl" class="font-mono">$0.00</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<main class="max-w-[1440px] mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-            <!-- Markets -->
-            <div class="glass rounded-lg p-6">
-                <h2 class="text-xl font-bold mb-4">🎯 Active Markets</h2>
-                <div id="active-markets" class="space-y-2">
-                    <div class="text-gray-400">Loading...</div>
-                </div>
-            </div>
-        </div>
+<!-- ════════════════════════════ STAT CARDS ROW ════════════════════════════ -->
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+    <div class="card card-glow rounded-xl p-5">
+        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Bankroll</div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono" id="bankroll">$100.00</div>
+        <div class="text-xs mt-2 font-mono" id="total-pnl-label">P&L <span id="total-pnl" class="text-gray-400">$0.00</span></div>
+    </div>
+    <div class="card card-glow rounded-xl p-5">
+        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Win Rate</div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono" id="win-rate">0%</div>
+        <div class="text-xs mt-2 text-gray-400" id="win-loss">0W / 0L</div>
+    </div>
+    <div class="card card-glow rounded-xl p-5">
+        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Daily P&L</div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono" id="daily-pnl">$0.00</div>
+        <div class="text-xs mt-2 text-gray-400" id="daily-bets">0 bets today</div>
+    </div>
+    <div class="card card-glow rounded-xl p-5">
+        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Pending</div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono" id="pending-trades">0</div>
+        <div class="text-xs mt-2 text-gray-400" id="total-trades">0 total trades</div>
+    </div>
+    <div class="card card-glow rounded-xl p-5">
+        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Uptime</div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono" id="uptime">00:00:00</div>
+        <div class="text-xs mt-2 text-gray-400" id="uptime-label">hh:mm:ss</div>
+    </div>
+</div>
 
-        <!-- Trade Log -->
-        <div class="glass rounded-lg p-6">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-bold">📝 Recent Trades</h2>
-                <select id="trade-filter" class="bg-gray-700 rounded px-3 py-1 text-sm" onchange="loadTrades()">
-                    <option value="all">All Trades</option>
-                    <option value="pending">Pending</option>
-                    <option value="settled">Settled</option>
-                </select>
-            </div>
-            
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="border-b border-gray-700">
-                        <tr>
-                            <th class="text-left py-2">Time</th>
-                            <th class="text-left py-2">Market</th>
-                            <th class="text-left py-2">Strategy</th>
-                            <th class="text-left py-2">Direction</th>
-                            <th class="text-right py-2">Amount</th>
-                            <th class="text-right py-2">Price</th>
-                            <th class="text-left py-2">Status</th>
-                            <th class="text-right py-2">P&L</th>
-                        </tr>
-                    </thead>
-                    <tbody id="trades-table" class="divide-y divide-gray-700">
-                        <tr>
-                            <td colspan="8" class="text-center py-8 text-gray-400">No trades yet</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+<!-- ════════════════════════ STRATEGIES + MARKETS ════════════════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Strategy Cards -->
+    <div class="lg:col-span-2 space-y-4">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Strategies</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="strategy-cards">
+            <!-- Rendered by JS -->
         </div>
     </div>
 
-    <script>
-        let ws = null;
-        
-        // Connect to WebSocket
-        function connectWebSocket() {
-            ws = new WebSocket(`ws://${window.location.host}/ws`);
-            
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-            };
-            
-            ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                
-                if (message.type === 'status') {
-                    updateStatus(message.data);
-                } else if (message.type === 'trade') {
-                    addTradeToTable(message.data);
-                }
-            };
-            
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-            
-            ws.onclose = () => {
-                console.log('WebSocket disconnected, reconnecting...');
-                setTimeout(connectWebSocket, 2000);
-            };
-        }
-        
-        // Update dashboard status
-        function updateStatus(data) {
-            // Bot status
-            const statusDot = document.getElementById('status-dot');
-            const statusText = document.getElementById('status-text');
-            const startBtn = document.getElementById('start-btn');
-            const stopBtn = document.getElementById('stop-btn');
-            
-            if (data.running) {
-                statusDot.className = 'status-dot status-running';
-                statusText.textContent = 'Running';
-                startBtn.classList.add('hidden');
-                stopBtn.classList.remove('hidden');
-            } else {
-                statusDot.className = 'status-dot status-stopped';
-                statusText.textContent = 'Stopped';
-                startBtn.classList.remove('hidden');
-                stopBtn.classList.add('hidden');
-            }
-            
-            // Stats
-            document.getElementById('bankroll').textContent = `$${data.bankroll.toFixed(2)}`;
-            document.getElementById('total-pnl').textContent = `Total P&L: $${data.total_pnl.toFixed(2)}`;
-            document.getElementById('win-rate').textContent = `${data.win_rate.toFixed(1)}%`;
-            document.getElementById('win-loss').textContent = `${data.wins}W / ${data.losses}L`;
-            document.getElementById('daily-pnl').textContent = `$${data.daily_pnl.toFixed(2)}`;
-            document.getElementById('daily-bets').textContent = `${data.daily_bets} bets today`;
-            document.getElementById('pending-trades').textContent = data.pending_trades;
-            document.getElementById('total-trades').textContent = `${data.total_trades} total`;
-            
-            // Strategy stats
-            if (data.strategy_stats) {
-                document.getElementById('arb-pnl').textContent = `$${data.strategy_stats.arbitrage.pnl.toFixed(2)}`;
-                document.getElementById('streak-pnl').textContent = `$${data.strategy_stats.streak.pnl.toFixed(2)}`;
-                document.getElementById('copy-pnl').textContent = `$${data.strategy_stats.copytrade.pnl.toFixed(2)}`;
-            }
-            
-            // Strategy status
-            if (data.strategies) {
-                document.getElementById('arb-status').textContent = data.strategies.arbitrage ? 'Enabled' : 'Disabled';
-                document.getElementById('arb-status').className = data.strategies.arbitrage ? 'text-green-400' : 'text-gray-500';
-                
-                document.getElementById('streak-status').textContent = data.strategies.streak ? 'Enabled' : 'Disabled';
-                document.getElementById('streak-status').className = data.strategies.streak ? 'text-green-400' : 'text-gray-500';
-                
-                document.getElementById('copy-status').textContent = data.strategies.copytrade ? 'Enabled' : 'Disabled';
-                document.getElementById('copy-status').className = data.strategies.copytrade ? 'text-green-400' : 'text-gray-500';
-            }
-            
-            // Active markets
-            if (data.active_markets) {
-                const marketsDiv = document.getElementById('active-markets');
-                marketsDiv.innerHTML = data.active_markets.map(m => 
-                    `<div class="flex items-center justify-between py-1">
-                        <span>🎯 ${m}</span>
-                        <span class="text-green-400 text-xs">Active</span>
-                    </div>`
-                ).join('');
-            }
-        }
-        
-        // Load trades
-        async function loadTrades() {
-            const filter = document.getElementById('trade-filter').value;
-            const response = await fetch('/api/trades?limit=50');
-            const data = await response.json();
-            
-            let trades = data.trades || [];
-            
-            // Apply filter
-            if (filter === 'pending') {
-                trades = trades.filter(t => t.status === 'pending');
-            } else if (filter === 'settled') {
-                trades = trades.filter(t => t.status === 'settled');
-            }
-            
-            const tbody = document.getElementById('trades-table');
-            
-            if (trades.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-400">No trades yet</td></tr>';
-                return;
-            }
-            
-            tbody.innerHTML = trades.map(trade => {
-                const statusBadge = trade.status === 'pending' 
-                    ? '<span class="text-yellow-400">Pending</span>'
-                    : trade.won 
-                        ? '<span class="text-green-400">✓ Won</span>'
-                        : '<span class="text-red-400">✗ Lost</span>';
-                
-                const pnlColor = trade.pnl > 0 ? 'text-green-400' : trade.pnl < 0 ? 'text-red-400' : 'text-gray-400';
-                
-                return `
-                    <tr class="hover:bg-gray-700/30">
-                        <td class="py-2">${trade.timestamp.split(' ')[1]}</td>
-                        <td class="py-2"><span class="text-xs">${trade.market}</span></td>
-                        <td class="py-2"><span class="px-2 py-1 bg-gray-700 rounded text-xs">${trade.strategy}</span></td>
-                        <td class="py-2">${trade.direction}</td>
-                        <td class="py-2 text-right">$${trade.amount.toFixed(2)}</td>
-                        <td class="py-2 text-right">${trade.price.toFixed(4)}</td>
-                        <td class="py-2">${statusBadge}</td>
-                        <td class="py-2 text-right ${pnlColor} font-mono">$${trade.pnl.toFixed(2)}</td>
+    <!-- Market Selector -->
+    <div class="space-y-4">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Markets</h2>
+        <div class="card card-glow rounded-xl p-5">
+            <div class="grid grid-cols-1 gap-1" id="market-grid">
+                <!-- Rendered by JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════ LIVE TRADE LOG ════════════════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="card card-glow rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Live Trade Log</h2>
+        <div class="trade-log space-y-1 font-mono text-xs" id="trade-log">
+            <div class="text-gray-600 py-8 text-center">Waiting for trades…</div>
+        </div>
+    </div>
+
+    <!-- Recent Trades Table -->
+    <div class="card card-glow rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Recent Trades</h2>
+            <select id="trade-filter" onchange="loadTrades()" class="text-xs bg-navy-800 border border-navy-700 rounded px-2 py-1 text-gray-300 focus:outline-none focus:border-accent">
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="settled">Settled</option>
+            </select>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+                <thead>
+                    <tr class="text-gray-500 border-b border-navy-700/60">
+                        <th class="text-left py-2 font-medium">Time</th>
+                        <th class="text-left py-2 font-medium">Market</th>
+                        <th class="text-left py-2 font-medium">Strat</th>
+                        <th class="text-left py-2 font-medium">Dir</th>
+                        <th class="text-right py-2 font-medium">Amt</th>
+                        <th class="text-right py-2 font-medium">Price</th>
+                        <th class="text-center py-2 font-medium">Result</th>
+                        <th class="text-right py-2 font-medium">P&L</th>
                     </tr>
-                `;
-            }).join('');
+                </thead>
+                <tbody id="trades-table" class="divide-y divide-navy-700/40">
+                    <tr><td colspan="8" class="text-center py-8 text-gray-600">No trades yet</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="flex items-center justify-between mt-3" id="pagination">
+            <button onclick="prevPage()" class="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30" id="prev-btn" disabled>← Prev</button>
+            <span class="text-xs text-gray-600" id="page-info">Page 1</span>
+            <button onclick="nextPage()" class="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30" id="next-btn" disabled>Next →</button>
+        </div>
+    </div>
+</div>
+
+</main>
+
+<!-- ════════════════════════ SETTINGS MODAL ════════════════════════ -->
+<div id="settings-modal" class="fixed inset-0 z-[100] hidden">
+    <div class="modal-bg absolute inset-0" onclick="closeSettings()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg">
+        <div class="card card-glow rounded-2xl p-6 m-4 space-y-5">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-bold">Settings</h2>
+                <button onclick="closeSettings()" class="text-gray-500 hover:text-gray-300 text-xl leading-none">&times;</button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm" id="settings-fields">
+                <!-- Rendered by JS -->
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeSettings()" class="px-4 py-2 text-sm rounded-lg bg-navy-700 hover:bg-navy-600 transition">Cancel</button>
+                <button onclick="saveSettings()" class="px-4 py-2 text-sm rounded-lg bg-accent hover:bg-indigo-500 font-semibold transition">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════ STATE ═══════════════════════════
+let ws = null;
+let state = {};
+let tradeLog = [];
+let currentPage = 0;
+const PAGE_SIZE = 20;
+let totalTrades = 0;
+let botRunning = false;
+
+const STRATEGY_META = {
+    arbitrage: { icon: '⚡', label: 'Arbitrage', color: 'indigo' },
+    streak:    { icon: '📈', label: 'Streak Reversal', color: 'cyan' },
+    copytrade: { icon: '📋', label: 'Copytrade', color: 'purple' },
+};
+
+// ═══════════════════════════ WEBSOCKET ═══════════════════════════
+function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+    ws.onopen = () => {
+        document.getElementById('ws-indicator').className = 'w-2 h-2 rounded-full bg-emerald-400';
+        document.getElementById('ws-text').textContent = 'Connected';
+    };
+
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'status') updateDashboard(msg.data);
+        if (msg.type === 'trade') addTradeLog(msg.data);
+    };
+
+    ws.onclose = () => {
+        document.getElementById('ws-indicator').className = 'w-2 h-2 rounded-full bg-red-500';
+        document.getElementById('ws-text').textContent = 'Disconnected';
+        setTimeout(connectWS, 2000);
+    };
+
+    ws.onerror = () => ws.close();
+}
+
+// ═══════════════════════════ DASHBOARD UPDATE ═══════════════════════════
+function updateDashboard(d) {
+    state = d;
+    botRunning = d.running;
+
+    // Mode badge
+    const mb = document.getElementById('mode-badge');
+    mb.textContent = d.mode;
+    mb.className = d.mode === 'LIVE'
+        ? 'text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-400 uppercase tracking-wider'
+        : 'text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 uppercase tracking-wider';
+
+    // Bot status
+    const dot = document.getElementById('status-dot');
+    const stxt = document.getElementById('status-text');
+    const btn = document.getElementById('bot-toggle-btn');
+    if (d.running) {
+        dot.className = 'w-3 h-3 rounded-full bg-emerald-400 pulse-green';
+        stxt.textContent = 'Running';
+        btn.textContent = 'Stop Bot';
+        btn.className = 'px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/30';
+    } else {
+        dot.className = 'w-3 h-3 rounded-full bg-red-500';
+        stxt.textContent = 'Stopped';
+        btn.textContent = 'Start Bot';
+        btn.className = 'px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30';
+    }
+
+    // Stats
+    setText('bankroll', '$' + num(d.bankroll));
+    colorPnl('total-pnl', d.total_pnl);
+    setText('win-rate', num(d.win_rate, 1) + '%');
+    setText('win-loss', `${d.wins || 0}W / ${d.losses || 0}L`);
+    colorPnl('daily-pnl', d.daily_pnl);
+    setText('daily-bets', `${d.daily_bets || 0} bets today`);
+    setText('pending-trades', d.pending_trades || 0);
+    setText('total-trades', `${d.total_trades || 0} total trades`);
+
+    // Uptime
+    const secs = Math.floor(d.uptime_seconds || 0);
+    const hh = String(Math.floor(secs/3600)).padStart(2,'0');
+    const mm = String(Math.floor((secs%3600)/60)).padStart(2,'0');
+    const ss = String(secs%60).padStart(2,'0');
+    setText('uptime', `${hh}:${mm}:${ss}`);
+
+    // Strategies
+    renderStrategies(d.strategies || {});
+
+    // Markets
+    renderMarkets(d.all_markets || {});
+}
+
+function renderStrategies(strats) {
+    const container = document.getElementById('strategy-cards');
+    container.innerHTML = '';
+    for (const [key, data] of Object.entries(strats)) {
+        const meta = STRATEGY_META[key] || { icon: '●', label: key, color: 'gray' };
+        const wr = data.trades > 0 ? ((data.wins / (data.wins + data.losses || 1)) * 100) : 0;
+        const pnlColor = data.pnl >= 0 ? 'text-emerald-400' : 'text-red-400';
+        const enabled = data.enabled;
+
+        container.innerHTML += `
+        <div class="card card-glow rounded-xl p-4 fade-in">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">${meta.icon}</span>
+                    <span class="text-sm font-semibold">${meta.label}</span>
+                </div>
+                <div class="toggle-track ${enabled ? 'on' : 'off'}" onclick="toggleStrategy('${key}', ${!enabled})">
+                    <div class="toggle-thumb"></div>
+                </div>
+            </div>
+            <div class="space-y-2 text-xs">
+                <div class="flex justify-between"><span class="text-gray-500">P&L</span><span class="font-mono font-semibold ${pnlColor}">${pnlSign(data.pnl)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">Trades</span><span class="font-mono">${data.trades}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">Win Rate</span><span class="font-mono">${num(wr,1)}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">W / L</span><span class="font-mono">${data.wins} / ${data.losses}</span></div>
+            </div>
+        </div>`;
+    }
+}
+
+function renderMarkets(markets) {
+    const grid = document.getElementById('market-grid');
+    // Group by asset
+    const assets = {};
+    for (const [id, m] of Object.entries(markets)) {
+        const asset = id.split('-')[0].toUpperCase();
+        if (!assets[asset]) assets[asset] = [];
+        assets[asset].push({ id, ...m });
+    }
+
+    let html = '';
+    for (const [asset, items] of Object.entries(assets)) {
+        html += `<div class="mb-3"><div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">${asset}</div>`;
+        for (const m of items) {
+            const interval = m.id.includes('5m') ? '5m' : '15m';
+            html += `
+            <label class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-navy-700/40 cursor-pointer transition">
+                <span class="text-sm">${asset} ${interval}</span>
+                <div class="toggle-track ${m.enabled ? 'on' : 'off'}" onclick="event.preventDefault();toggleMarket('${m.id}', ${!m.enabled})">
+                    <div class="toggle-thumb"></div>
+                </div>
+            </label>`;
         }
-        
-        // Start bot
-        async function startBot() {
-            try {
-                const response = await fetch('/api/start', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    console.log('Bot started');
-                } else {
-                    alert('Error starting bot: ' + (data.error || 'Unknown error'));
-                }
-            } catch (error) {
-                alert('Error starting bot: ' + error.message);
-            }
+        html += '</div>';
+    }
+    grid.innerHTML = html;
+}
+
+// ═══════════════════════════ TRADE LOG ═══════════════════════════
+function addTradeLog(t) {
+    const log = document.getElementById('trade-log');
+    if (tradeLog.length === 0) log.innerHTML = '';
+
+    const isWin = t.won === true;
+    const isLoss = t.won === false && t.outcome && t.outcome !== 'PENDING';
+    const color = isWin ? 'text-emerald-400' : isLoss ? 'text-red-400' : 'text-yellow-400';
+    const icon = isWin ? '✓' : isLoss ? '✗' : '◌';
+    const time = t.timestamp ? t.timestamp.split(' ')[1] : '';
+
+    const line = document.createElement('div');
+    line.className = `${color} py-0.5 fade-in`;
+    line.textContent = `${time} ${icon} [${t.strategy}] ${t.direction} $${num(t.amount)} @ ${num(t.price,4)} → ${t.outcome} ${pnlSign(t.pnl)}`;
+    log.prepend(line);
+
+    tradeLog.unshift(t);
+    if (tradeLog.length > 200) { tradeLog.pop(); log.lastChild?.remove(); }
+}
+
+// ═══════════════════════════ TRADES TABLE ═══════════════════════════
+async function loadTrades() {
+    const filter = document.getElementById('trade-filter').value;
+    const params = new URLSearchParams({ limit: PAGE_SIZE, offset: currentPage * PAGE_SIZE });
+    if (filter !== 'all') params.set('status', filter);
+
+    const res = await fetch('/api/trades?' + params);
+    const data = await res.json();
+    totalTrades = data.total || 0;
+
+    const tbody = document.getElementById('trades-table');
+    if (!data.trades || data.trades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-600">No trades</td></tr>';
+    } else {
+        tbody.innerHTML = data.trades.map(t => {
+            const badge = t.status === 'pending'
+                ? '<span class="px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400">Pending</span>'
+                : t.won
+                    ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">Won</span>'
+                    : '<span class="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">Lost</span>';
+            const pc = t.pnl > 0 ? 'text-emerald-400' : t.pnl < 0 ? 'text-red-400' : 'text-gray-500';
+            return `<tr class="hover:bg-navy-800/50 transition">
+                <td class="py-2 text-gray-400">${t.timestamp.split(' ')[1]}</td>
+                <td class="py-2">${t.market}</td>
+                <td class="py-2"><span class="px-1.5 py-0.5 rounded bg-navy-700/80 text-gray-300">${t.strategy}</span></td>
+                <td class="py-2 font-semibold ${t.direction === 'UP' ? 'text-emerald-400' : 'text-red-400'}">${t.direction}</td>
+                <td class="py-2 text-right font-mono">$${num(t.amount)}</td>
+                <td class="py-2 text-right font-mono">${num(t.price, 4)}</td>
+                <td class="py-2 text-center">${badge}</td>
+                <td class="py-2 text-right font-mono font-semibold ${pc}">${pnlSign(t.pnl)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Pagination
+    document.getElementById('prev-btn').disabled = currentPage === 0;
+    document.getElementById('next-btn').disabled = (currentPage + 1) * PAGE_SIZE >= totalTrades;
+    const maxPage = Math.max(1, Math.ceil(totalTrades / PAGE_SIZE));
+    document.getElementById('page-info').textContent = `Page ${currentPage + 1} of ${maxPage}`;
+}
+
+function prevPage() { if (currentPage > 0) { currentPage--; loadTrades(); } }
+function nextPage() { if ((currentPage + 1) * PAGE_SIZE < totalTrades) { currentPage++; loadTrades(); } }
+
+// ═══════════════════════════ API ACTIONS ═══════════════════════════
+async function toggleBot() {
+    const url = botRunning ? '/api/bot/stop' : '/api/bot/start';
+    const res = await fetch(url, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) alert(data.error);
+}
+
+async function toggleStrategy(name, enable) {
+    const action = enable ? 'enable' : 'disable';
+    await fetch(`/api/strategy/${name}/${action}`, { method: 'POST' });
+}
+
+async function toggleMarket(id, enable) {
+    const action = enable ? 'enable' : 'disable';
+    await fetch(`/api/market/${id}/${action}`, { method: 'POST' });
+}
+
+// ═══════════════════════════ SETTINGS ═══════════════════════════
+const SETTINGS_FIELDS = [
+    { key: 'paper_trade', label: 'Paper Trade', type: 'bool' },
+    { key: 'initial_bankroll', label: 'Initial Bankroll', type: 'number', step: 10 },
+    { key: 'bet_amount', label: 'Bet Amount', type: 'number', step: 1 },
+    { key: 'min_bet', label: 'Min Bet', type: 'number', step: 1 },
+    { key: 'max_bet', label: 'Max Bet', type: 'number', step: 5 },
+    { key: 'kelly_fraction', label: 'Kelly Fraction', type: 'number', step: 0.05 },
+    { key: 'max_daily_bets', label: 'Max Daily Bets', type: 'number', step: 10 },
+    { key: 'max_daily_loss', label: 'Max Daily Loss', type: 'number', step: 10 },
+    { key: 'streak_trigger', label: 'Streak Trigger', type: 'number', step: 1 },
+    { key: 'arb_threshold', label: 'Arb Threshold', type: 'number', step: 0.01 },
+    { key: 'arb_min_edge_pct', label: 'Arb Min Edge %', type: 'number', step: 0.1 },
+];
+
+let settingsCache = {};
+
+async function openSettings() {
+    const res = await fetch('/api/settings');
+    settingsCache = await res.json();
+
+    const container = document.getElementById('settings-fields');
+    container.innerHTML = SETTINGS_FIELDS.map(f => {
+        const val = settingsCache[f.key];
+        if (f.type === 'bool') {
+            const checked = val ? 'checked' : '';
+            return `<label class="col-span-2 flex items-center justify-between">
+                <span class="text-gray-300">${f.label}</span>
+                <input type="checkbox" data-key="${f.key}" ${checked} class="w-4 h-4 accent-indigo-500">
+            </label>`;
         }
-        
-        // Stop bot
-        async function stopBot() {
-            try {
-                const response = await fetch('/api/stop', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    console.log('Bot stopped');
-                } else {
-                    alert('Error stopping bot: ' + (data.error || 'Unknown error'));
-                }
-            } catch (error) {
-                alert('Error stopping bot: ' + error.message);
-            }
-        }
-        
-        // Initialize
-        connectWebSocket();
-        loadTrades();
-        
-        // Reload trades every 5 seconds
-        setInterval(loadTrades, 5000);
-    </script>
+        return `<div>
+            <label class="text-gray-500 text-xs">${f.label}</label>
+            <input type="number" data-key="${f.key}" value="${val}" step="${f.step||1}"
+                class="w-full mt-1 px-3 py-1.5 bg-navy-800 border border-navy-700 rounded text-sm font-mono text-gray-200 focus:outline-none focus:border-accent">
+        </div>`;
+    }).join('');
+
+    document.getElementById('settings-modal').classList.remove('hidden');
+}
+
+function closeSettings() {
+    document.getElementById('settings-modal').classList.add('hidden');
+}
+
+async function saveSettings() {
+    const payload = {};
+    document.querySelectorAll('#settings-fields [data-key]').forEach(el => {
+        const key = el.dataset.key;
+        if (el.type === 'checkbox') payload[key] = el.checked;
+        else payload[key] = parseFloat(el.value);
+    });
+    await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    closeSettings();
+}
+
+// ═══════════════════════════ HELPERS ═══════════════════════════
+function setText(id, v) { document.getElementById(id).textContent = v; }
+function num(v, d=2) { return (v || 0).toFixed(d); }
+function pnlSign(v) { v = v || 0; return (v >= 0 ? '+' : '') + '$' + num(Math.abs(v)); }
+function colorPnl(id, v) {
+    const el = document.getElementById(id);
+    el.textContent = pnlSign(v);
+    el.className = v > 0 ? 'font-mono font-semibold text-emerald-400' : v < 0 ? 'font-mono font-semibold text-red-400' : 'font-mono font-semibold text-gray-400';
+}
+
+// ═══════════════════════════ INIT ═══════════════════════════
+connectWS();
+loadTrades();
+</script>
 </body>
 </html>
