@@ -24,6 +24,7 @@ from src.config import Config, MarketType
 
 if TYPE_CHECKING:
     from src.core.polymarket import PolymarketClient, MarketDataCache, Market
+    from src.strategies.bayesian_model import BayesianModel
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -370,6 +371,14 @@ class ExchangeWebSocket:
         # Feed to tracker (fast path)
         self.tracker.on_trade(trade)
 
+        # Feed to Bayesian model if available (via LatencyArb reference)
+        if hasattr(self, '_bayesian_model') and self._bayesian_model:
+            asset = self.tracker.SYMBOLS.get(trade.symbol.lower())
+            if asset:
+                self._bayesian_model.on_trade(
+                    asset, trade.price, trade.quantity, trade.is_buyer_maker,
+                )
+
         # Check for momentum signals (runs every trade — must be fast)
         signals = self.tracker.check_signals()
         if signals and self._on_signal:
@@ -474,6 +483,19 @@ class LatencyArb:
         # Signal history
         self.signal_history: list[LatencyArbSignal] = []
 
+        # Bayesian model reference (set by coordinator)
+        self._bayesian_model: Optional["BayesianModel"] = None
+
+    @property
+    def bayesian_model(self):
+        return self._bayesian_model
+
+    @bayesian_model.setter
+    def bayesian_model(self, model):
+        self._bayesian_model = model
+        # Also set on the websocket so it can feed trades
+        self.binance_ws._bayesian_model = model
+
     async def start(self):
         """Start Binance WebSocket."""
         await self.binance_ws.start()
@@ -497,6 +519,16 @@ class LatencyArb:
         if now - last < self._cooldown_seconds:
             self.stats.signals_skipped += 1
             return
+
+        # Bayesian confirmation: only fire if posterior agrees with direction (>60% confidence)
+        if self.bayesian_model:
+            p_up = self.bayesian_model.get_bayesian_probability(signal.asset)
+            if signal.direction == "up" and p_up < 0.60:
+                self.stats.signals_skipped += 1
+                return
+            if signal.direction == "down" and p_up > 0.40:
+                self.stats.signals_skipped += 1
+                return
 
         # Check Polymarket pricing
         arb_signal = self._check_polymarket_gap(signal)
@@ -586,14 +618,18 @@ class LatencyArb:
             latency_ms=latency_ms,
         )
 
-    def record_outcome(self, won: bool, pnl: float):
-        """Record the outcome of a latency arb trade."""
+    def record_outcome(self, won: bool, pnl: float, asset: str = "", outcome: str = ""):
+        """Record the outcome of a latency arb trade and feed back to Bayesian model."""
         if won:
             self.stats.wins += 1
         else:
             self.stats.losses += 1
         self.stats.total_pnl += pnl
         self.stats.total_volume += abs(pnl)
+
+        # Feed outcome to Bayesian model for self-learning
+        if self.bayesian_model and asset and outcome:
+            self.bayesian_model.on_outcome(asset, outcome)
 
     def get_stats(self) -> dict:
         return {

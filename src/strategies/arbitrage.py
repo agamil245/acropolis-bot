@@ -30,6 +30,7 @@ from src.core.polymarket import Market, PolymarketClient, MarketDataCache
 
 from src.strategies.spread_farmer import SpreadFarmer, SpreadCycle
 from src.strategies.latency_arb import LatencyArb, LatencyArbSignal, MomentumSignal
+from src.strategies.bayesian_model import BayesianModel
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -274,8 +275,12 @@ class ArbitrageStrategy:
         self.market_cache = market_cache
         self.client = client
 
+        # Layer 0: Bayesian Intelligence Model
+        self.bayesian_model = BayesianModel()
+
         # Layer 1: Spread Farmer
         self.spread_farmer = SpreadFarmer(client=client, market_cache=market_cache)
+        self.spread_farmer.bayesian_model = self.bayesian_model
 
         # Layer 2: Latency Arb
         self.latency_arb = LatencyArb(
@@ -283,6 +288,7 @@ class ArbitrageStrategy:
             market_cache=market_cache,
             on_fire=self._on_latency_signal,
         )
+        self.latency_arb.bayesian_model = self.bayesian_model
 
         # Pending latency signals (consumed by bot_engine on next tick)
         self._pending_latency_signals: list[LatencyArbSignal] = []

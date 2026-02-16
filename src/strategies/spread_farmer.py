@@ -21,6 +21,7 @@ from src.config import Config, MarketType
 
 if TYPE_CHECKING:
     from src.core.polymarket import PolymarketClient, MarketDataCache, Market
+    from src.strategies.bayesian_model import BayesianModel
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -155,6 +156,9 @@ class SpreadFarmer:
         self._override_active: bool = False
         self._override_direction: Optional[str] = None
 
+        # Bayesian model reference (set by coordinator)
+        self.bayesian_model: Optional["BayesianModel"] = None
+
     # ── Order Management ──────────────────────────────────────────────────
 
     async def place_limit_order(
@@ -271,6 +275,17 @@ class SpreadFarmer:
         if self._override_active:
             return None  # latency arb has taken over
 
+        # Volatility regime check: pause in extreme vol, boost in low vol
+        vol_size_multiplier = 1.0
+        if self.bayesian_model and hasattr(market, 'market_type'):
+            regime = self.bayesian_model.get_volatility_regime(market.market_type.asset)
+            if regime == "extreme":
+                return None  # too risky for both-side fills
+            elif regime == "low":
+                vol_size_multiplier = 1.3  # safer to increase size
+            elif regime == "high":
+                vol_size_multiplier = 0.7  # reduce exposure
+
         # Get mid price
         mid = (market.up_price + market.down_price) / 2.0
         if mid <= 0 or mid >= 1:
@@ -294,13 +309,16 @@ class SpreadFarmer:
             created_at=time.time(),
         )
 
+        # Apply volatility-adjusted size
+        adjusted_size = self.order_size * vol_size_multiplier
+
         # Place YES order
         if market.up_token_id:
             yes_order = await self.place_limit_order(
                 token_id=market.up_token_id,
                 side="YES",
                 price=yes_price,
-                size=self.order_size,
+                size=adjusted_size,
                 market_slug=market.slug,
                 market_ts=market.timestamp,
             )
@@ -312,7 +330,7 @@ class SpreadFarmer:
                 token_id=market.down_token_id,
                 side="NO",
                 price=no_price,
-                size=self.order_size,
+                size=adjusted_size,
                 market_slug=market.slug,
                 market_ts=market.timestamp,
             )

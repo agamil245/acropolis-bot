@@ -677,6 +677,11 @@ class BotEngine:
                             if trade.strategy == "arbitrage" and self._arb_strategy:
                                 self._arb_strategy.release_exposure(trade.amount)
 
+                            # Feed outcome to Bayesian model for self-learning
+                            if self._arb_strategy and hasattr(self._arb_strategy, 'bayesian_model'):
+                                asset = trade.market_type.asset if hasattr(trade, 'market_type') else "BTC"
+                                self._arb_strategy.bayesian_model.on_outcome(asset, market.outcome)
+
                             self.state.save()
 
                             self.events.emit(Event(EventType.TRADE_SETTLED, {
