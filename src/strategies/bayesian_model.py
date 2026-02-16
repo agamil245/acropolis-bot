@@ -859,13 +859,15 @@ class BayesianModel:
         """Get current volatility regime: 'low', 'normal', 'high', 'extreme'."""
         return self.volatility.get_regime(asset)
 
-    def should_spread_farm(self, market_type: MarketType) -> bool:
+    def should_spread_farm(self, market_type) -> bool:
         """Whether spread farming is safe for this market's asset.
 
         True when volatility is low or normal (range-bound).
         False when extreme (too risky for both-side fills).
         """
-        asset = market_type.asset
+        if market_type is None:
+            return True  # Default to farming if no market specified
+        asset = market_type.asset if hasattr(market_type, 'asset') else str(market_type)
         regime = self.get_volatility_regime(asset)
         return regime in ("low", "normal")
 
