@@ -154,6 +154,10 @@ class BotEngine:
         self.paper_running = False
         self._paper_task: Optional[asyncio.Task] = None
 
+        # Chainlink oracle feed
+        self._chainlink_feed = None
+        self._chainlink_momentum = None
+
         # Import strategies lazily to avoid circular imports
         self._arb_strategy = None
         self._copy_monitor = None
@@ -179,8 +183,23 @@ class BotEngine:
             f"{len(self.state.trades)} trades, "
             f"{len(self.state.get_pending_trades())} pending")
 
+    def _init_chainlink(self):
+        """Initialize Chainlink oracle price feed — THE edge."""
+        try:
+            from src.core.chainlink_feed import ChainlinkPriceFeed, ChainlinkMomentumDetector
+            self._chainlink_feed = ChainlinkPriceFeed()
+            self._chainlink_momentum = ChainlinkMomentumDetector(self._chainlink_feed)
+            log("🔗 Chainlink oracle feed initialized (BTC/ETH/SOL on Polygon)")
+        except ImportError as e:
+            log(f"⚠️ Chainlink feed unavailable (install web3): {e}")
+        except Exception as e:
+            log(f"⚠️ Chainlink feed init error: {e}")
+
     def _init_strategies(self):
         """Initialize strategy modules."""
+        # Initialize Chainlink first — it's the primary data source
+        self._init_chainlink()
+
         if Config.ENABLE_ARBITRAGE:
             try:
                 from src.strategies.arbitrage import ArbitrageStrategy
@@ -189,6 +208,11 @@ class BotEngine:
                     market_cache=self.market_cache,
                 )
                 log("⚡ Hybrid strategy loaded (Spread Farmer + Latency Arb)")
+                # Link Chainlink as PRIMARY price source
+                if self._chainlink_feed and self._chainlink_momentum:
+                    self._arb_strategy.latency_arb.set_chainlink(
+                        self._chainlink_feed, self._chainlink_momentum
+                    )
             except ImportError as e:
                 log(f"⚠️ Hybrid strategy unavailable: {e}")
 
@@ -230,6 +254,13 @@ class BotEngine:
             "bankroll": self.state.bankroll,
         }))
 
+        # Start Chainlink oracle feed
+        if self._chainlink_feed:
+            try:
+                await self._chainlink_feed.start()
+            except Exception as e:
+                log(f"⚠️ Failed to start Chainlink feed: {e}")
+
         # Start hybrid strategy layers (Binance WS + spread farming)
         if Config.ENABLE_ARBITRAGE and self._arb_strategy:
             try:
@@ -243,6 +274,8 @@ class BotEngine:
         if Config.ENABLE_ARBITRAGE and self._arb_strategy:
             self._tasks.append(asyncio.create_task(self._arbitrage_loop()))
             self._tasks.append(asyncio.create_task(self._latency_arb_loop()))
+            if self._chainlink_feed:
+                self._tasks.append(asyncio.create_task(self._chainlink_divergence_loop()))
 
         if Config.ENABLE_STREAK:
             self._tasks.append(asyncio.create_task(self._streak_loop()))
@@ -274,6 +307,13 @@ class BotEngine:
         # Wait for cancellation
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
+
+        # Stop Chainlink feed
+        if self._chainlink_feed:
+            try:
+                await self._chainlink_feed.stop()
+            except Exception:
+                pass
 
         # Stop hybrid strategy layers
         if self._arb_strategy:
@@ -441,6 +481,83 @@ class BotEngine:
             except Exception as e:
                 log(f"[SNIPER] Error: {e}")
                 await asyncio.sleep(1)
+
+    # ─── Chainlink Divergence Loop ────────────────────────────────────────
+
+    async def _chainlink_divergence_loop(self):
+        """Layer 2+: Poll Chainlink oracle for divergence vs Polymarket.
+
+        This is THE edge. Chainlink IS the settlement oracle.
+        We read the answer sheet before Polymarket grades the test.
+        """
+        log("[CHAINLINK] 🔗 Oracle divergence loop active (PRIMARY signal source)")
+
+        while self.running:
+            try:
+                if not self._arb_strategy:
+                    await asyncio.sleep(5)
+                    continue
+
+                can_trade, reason = self.state.can_trade()
+                if not can_trade:
+                    await asyncio.sleep(2)
+                    continue
+
+                # Check for Chainlink divergence signals
+                signals = self._arb_strategy.latency_arb.check_chainlink_divergence()
+
+                for signal in signals:
+                    market = signal.market
+                    if not market or market.closed:
+                        continue
+
+                    direction = signal.direction
+                    # Size based on divergence magnitude and confidence
+                    base = min(self.max_position_usd(), Config.LATENCY_MAX_POSITION)
+                    amount = base * signal.confidence
+                    amount = max(Config.MIN_BET, min(amount, Config.MAX_BET))
+
+                    trade = self.trader.place_bet(
+                        market=market,
+                        direction=direction,
+                        amount=amount,
+                        strategy="arbitrage",
+                        arbitrage_edge=signal.divergence * 100,
+                        confidence=signal.confidence,
+                    )
+
+                    if trade:
+                        # Mark cooldown
+                        self._arb_strategy.latency_arb._last_fire[f"chainlink_{signal.asset}"] = time.time()
+                        if self._arb_strategy:
+                            self._arb_strategy.update_exposure(trade.amount)
+
+                        log(f"[CHAINLINK] 🔥 FIRE {signal.asset} {direction.upper()} ${amount:.2f} | "
+                            f"Oracle Δ{signal.change_pct:+.3f}% | "
+                            f"Edge: {signal.divergence:.2f}¢ | "
+                            f"Time left: {signal.time_left_seconds}s")
+
+                        self.events.emit(Event(EventType.TRADE_PLACED, {
+                            "trade_id": trade.id,
+                            "strategy": "chainlink_oracle",
+                            "direction": direction,
+                            "amount": trade.amount,
+                            "chainlink_change_pct": signal.change_pct,
+                            "divergence": signal.divergence,
+                            "time_left": signal.time_left_seconds,
+                        }))
+
+                await asyncio.sleep(Config.CHAINLINK_POLL_INTERVAL)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log(f"[CHAINLINK] Error: {e}")
+                await asyncio.sleep(2)
+
+    def max_position_usd(self) -> float:
+        """Max position size based on bankroll."""
+        return self.state.bankroll * Config.MAX_POSITION_SIZE_PCT
 
     # ─── Streak Reversal Strategy Loop ────────────────────────────────────
 

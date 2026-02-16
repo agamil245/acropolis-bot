@@ -78,6 +78,33 @@ class LatencyArbSignal:
 
 
 @dataclass
+class ChainlinkDivergenceSignal:
+    """Signal from Chainlink oracle divergence vs Polymarket pricing.
+
+    This is the PRIMARY signal source — Chainlink IS the settlement oracle.
+    When Chainlink shows a clear direction but Polymarket hasn't repriced,
+    that's the edge.
+    """
+    asset: str
+    direction: str              # "up" or "down"
+    chainlink_price: float
+    window_start_price: float
+    change_pct: float           # Chainlink % move in window
+    polymarket_price: float     # current Polymarket price on correct side
+    implied_fair_value: float   # what it SHOULD be trading at
+    divergence: float           # implied - actual (our edge in $)
+    time_left_seconds: int
+    confidence: float
+    market: Optional["Market"] = None
+    market_type: MarketType = MarketType.BTC_5M
+    timestamp_ms: int = 0
+
+    def __post_init__(self):
+        if self.timestamp_ms == 0:
+            self.timestamp_ms = int(time.time() * 1000)
+
+
+@dataclass
 class LatencyArbStats:
     """Cumulative statistics."""
     signals_detected: int = 0
@@ -446,10 +473,11 @@ class ExchangeWebSocket:
 class LatencyArb:
     """Latency arbitrage strategy.
 
-    When Binance shows a sharp move, checks if Polymarket has repriced.
-    If not, fires an aggressive market buy on the correct side.
+    PRIMARY: Chainlink oracle divergence — reads the settlement source directly.
+    SECONDARY: Binance/Bybit momentum for confirmation.
 
-    This fires ONLY on strong signals — quality over quantity.
+    Signal flow: Chainlink momentum → check Polymarket lag → divergence > threshold → FIRE
+    The key change: instead of "Binance moved fast", detect "Chainlink says X but Polymarket says Y"
     """
 
     def __init__(
@@ -466,12 +494,17 @@ class LatencyArb:
         self.min_price_gap: float = Config.MIN_PRICE_GAP
         self.max_position: float = Config.LATENCY_MAX_POSITION
 
-        # Binance components
+        # Binance components (SECONDARY confirmation)
         self.tracker = BinancePriceTracker()
         self.binance_ws = ExchangeWebSocket(
             tracker=self.tracker,
             on_signal=self._on_momentum_signal,
         )
+
+        # Chainlink components (PRIMARY — the settlement oracle)
+        self._chainlink_feed = None
+        self._chainlink_momentum = None
+        self._chainlink_signals: list[ChainlinkDivergenceSignal] = []
 
         # Stats
         self.stats = self.binance_ws.stats
@@ -496,10 +529,108 @@ class LatencyArb:
         # Also set on the websocket so it can feed trades
         self.binance_ws._bayesian_model = model
 
+    def set_chainlink(self, feed, momentum_detector):
+        """Set Chainlink feed and momentum detector (called by bot_engine)."""
+        self._chainlink_feed = feed
+        self._chainlink_momentum = momentum_detector
+        print("[SNIPER] 🔗 Chainlink oracle linked as PRIMARY price source")
+
+    def check_chainlink_divergence(self) -> list[ChainlinkDivergenceSignal]:
+        """Check all assets for Chainlink vs Polymarket divergence.
+
+        This is the PRIMARY signal source. Called from bot_engine polling loop.
+        Returns list of actionable divergence signals.
+        """
+        if not self._chainlink_momentum or not self.client:
+            return []
+
+        from src.core.chainlink_feed import get_divergence
+
+        signals = []
+        now = int(time.time())
+
+        for asset in ["BTC", "ETH", "SOL"]:
+            momentum = self._chainlink_momentum.get_momentum(asset)
+            if not momentum or not momentum.is_actionable:
+                continue
+
+            # Cooldown check
+            last = self._last_fire.get(f"chainlink_{asset}", 0)
+            if time.time() - last < self._cooldown_seconds:
+                continue
+
+            # Get current Polymarket market
+            market_type_map = {"BTC": MarketType.BTC_5M, "ETH": MarketType.ETH_5M, "SOL": MarketType.SOL_5M}
+            market_type = market_type_map.get(asset)
+            if not market_type:
+                continue
+
+            interval = market_type.interval_seconds
+            current_window = (now // interval) * interval
+
+            try:
+                market = self.client.get_market(market_type, current_window, use_cache=True)
+            except Exception:
+                continue
+
+            if not market or market.closed or not market.accepting_orders:
+                continue
+
+            # Calculate divergence
+            div_signal = get_divergence(
+                asset, momentum, market.up_price, market.down_price
+            )
+
+            if div_signal.is_profitable and div_signal.recommended_action != "pass":
+                # Binance confirmation (SECONDARY): check if exchange agrees
+                binance_price = self.tracker.get_latest_price(asset)
+                binance_confirms = True
+                if binance_price and momentum.window_start_price > 0:
+                    binance_dir = "up" if binance_price > momentum.window_start_price else "down"
+                    binance_confirms = (binance_dir == div_signal.direction)
+
+                # Create signal
+                chainlink_signal = ChainlinkDivergenceSignal(
+                    asset=asset,
+                    direction=div_signal.direction,
+                    chainlink_price=div_signal.chainlink_price,
+                    window_start_price=div_signal.window_start_price,
+                    change_pct=div_signal.change_pct,
+                    polymarket_price=div_signal.polymarket_price,
+                    implied_fair_value=div_signal.implied_fair_value,
+                    divergence=div_signal.divergence,
+                    time_left_seconds=div_signal.time_left_seconds,
+                    confidence=div_signal.confidence * (1.0 if binance_confirms else 0.7),
+                    market=market,
+                    market_type=market_type,
+                )
+
+                signals.append(chainlink_signal)
+                self._chainlink_signals.append(chainlink_signal)
+
+                # Keep history bounded
+                if len(self._chainlink_signals) > 500:
+                    self._chainlink_signals = self._chainlink_signals[-500:]
+
+                print(f"[CHAINLINK] 🎯 {asset} {div_signal.direction.upper()} | "
+                      f"Δ{div_signal.change_pct:+.3f}% | "
+                      f"Poly: {div_signal.polymarket_price:.2f}¢ vs Fair: {div_signal.implied_fair_value:.2f}¢ | "
+                      f"Edge: {div_signal.divergence:.2f}¢ | "
+                      f"Time left: {div_signal.time_left_seconds}s"
+                      f"{' ✓Binance' if binance_confirms else ' ✗Binance'}")
+
+        return signals
+
+    def consume_chainlink_signals(self) -> list[ChainlinkDivergenceSignal]:
+        """Consume and clear pending Chainlink divergence signals."""
+        signals = list(self._chainlink_signals)
+        self._chainlink_signals.clear()
+        return signals
+
     async def start(self):
-        """Start Binance WebSocket."""
+        """Start Binance WebSocket (Chainlink is started by bot_engine)."""
         await self.binance_ws.start()
-        print("[SNIPER] 🎯 Latency arb active — watching Binance feeds")
+        print("[SNIPER] 🎯 Latency arb active — Chainlink PRIMARY + Binance SECONDARY")
 
     async def stop(self):
         """Stop Binance WebSocket."""
@@ -632,8 +763,15 @@ class LatencyArb:
             self.bayesian_model.on_outcome(asset, outcome)
 
     def get_stats(self) -> dict:
+        chainlink_prices = {}
+        if self._chainlink_feed:
+            chainlink_prices = self._chainlink_feed.get_all_prices()
+
         return {
             "binance_connected": self.binance_ws._running,
+            "chainlink_connected": self._chainlink_feed is not None and self._chainlink_feed._initialized,
+            "chainlink_prices": chainlink_prices,
+            "chainlink_signals_total": len(self._chainlink_signals),
             "latest_prices": {
                 asset: self.tracker.get_latest_price(asset)
                 for asset in BinancePriceTracker.SYMBOLS.values()
