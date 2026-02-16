@@ -250,6 +250,21 @@ class Config:
     DELAY_MODEL_MAX_IMPACT: float = float(os.getenv("DELAY_MODEL_MAX_IMPACT", "10.0"))
     DELAY_MODEL_BASELINE_SPREAD: float = float(os.getenv("DELAY_MODEL_BASELINE_SPREAD", "0.02"))
 
+    # ===== BINANCE (Latency Arb) =====
+    BINANCE_WS_URL: str = os.getenv("BINANCE_WS_URL", "wss://stream.binance.com:9443")
+    BINANCE_API_KEY: str = os.getenv("BINANCE_API_KEY", "")  # optional, for higher rate limits
+
+    # ===== SPREAD FARMING (Layer 1) =====
+    SPREAD_OFFSET: float = float(os.getenv("SPREAD_OFFSET", "0.02"))  # bid this far below mid
+    SPREAD_ORDER_SIZE: float = float(os.getenv("SPREAD_ORDER_SIZE", "10.0"))  # USD per leg
+    SPREAD_REFRESH_INTERVAL: float = float(os.getenv("SPREAD_REFRESH_INTERVAL", "15.0"))  # seconds
+
+    # ===== LATENCY ARB (Layer 2) =====
+    MOMENTUM_THRESHOLD_PCT: float = float(os.getenv("MOMENTUM_THRESHOLD_PCT", "0.20"))  # 0.20%
+    MOMENTUM_WINDOW_SECONDS: float = float(os.getenv("MOMENTUM_WINDOW_SECONDS", "2.0"))
+    LATENCY_MAX_POSITION: float = float(os.getenv("LATENCY_MAX_POSITION", "50.0"))  # max USD per snipe
+    MIN_PRICE_GAP: float = float(os.getenv("MIN_PRICE_GAP", "0.05"))  # min Poly lag to fire
+
     # ===== POLYGONSCAN =====
     POLYGONSCAN_API_KEY: str = os.getenv("POLYGONSCAN_API_KEY", "")
 

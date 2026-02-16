@@ -184,10 +184,13 @@ class BotEngine:
         if Config.ENABLE_ARBITRAGE:
             try:
                 from src.strategies.arbitrage import ArbitrageStrategy
-                self._arb_strategy = ArbitrageStrategy()
-                log("⚡ Arbitrage strategy loaded")
+                self._arb_strategy = ArbitrageStrategy(
+                    client=self.client,
+                    market_cache=self.market_cache,
+                )
+                log("⚡ Hybrid strategy loaded (Spread Farmer + Latency Arb)")
             except ImportError as e:
-                log(f"⚠️ Arbitrage strategy unavailable: {e}")
+                log(f"⚠️ Hybrid strategy unavailable: {e}")
 
         if Config.ENABLE_COPYTRADE or Config.ENABLE_SELECTIVE:
             try:
@@ -227,11 +230,19 @@ class BotEngine:
             "bankroll": self.state.bankroll,
         }))
 
+        # Start hybrid strategy layers (Binance WS + spread farming)
+        if Config.ENABLE_ARBITRAGE and self._arb_strategy:
+            try:
+                await self._arb_strategy.start_layers()
+            except Exception as e:
+                log(f"⚠️ Failed to start hybrid layers: {e}")
+
         # Launch strategy tasks
         self._tasks = []
 
         if Config.ENABLE_ARBITRAGE and self._arb_strategy:
             self._tasks.append(asyncio.create_task(self._arbitrage_loop()))
+            self._tasks.append(asyncio.create_task(self._latency_arb_loop()))
 
         if Config.ENABLE_STREAK:
             self._tasks.append(asyncio.create_task(self._streak_loop()))
@@ -264,6 +275,13 @@ class BotEngine:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
+        # Stop hybrid strategy layers
+        if self._arb_strategy:
+            try:
+                await self._arb_strategy.stop_layers()
+            except Exception as e:
+                log(f"⚠️ Error stopping hybrid layers: {e}")
+
         # Stop WebSocket
         if self.market_cache:
             self.market_cache.stop()
@@ -295,8 +313,8 @@ class BotEngine:
     # ─── Arbitrage Strategy Loop ──────────────────────────────────────────
 
     async def _arbitrage_loop(self):
-        """Arbitrage strategy: scan for mispriced markets at high frequency."""
-        log("[ARB] ⚡ Arbitrage strategy active")
+        """Hybrid strategy: spread farming + legacy arb scanning."""
+        log("[HYBRID] ⚡ Hybrid strategy active (Layer 1: Spread Farmer)")
 
         while self.running:
             try:
@@ -308,19 +326,21 @@ class BotEngine:
                 # Get all active markets
                 markets = self.client.get_all_active_markets()
 
-                # Evaluate for arbitrage
+                # Tick spread farmer (Layer 1)
+                if self._arb_strategy:
+                    await self._arb_strategy.tick_spread_farmer(markets)
+
+                # Legacy arb scan for mispriced markets
                 signals = self._arb_strategy.evaluate_all_markets(markets, self.state.bankroll)
 
-                for signal in signals[:3]:  # Max 3 concurrent arb positions
+                for signal in signals[:3]:
                     if self._arb_strategy.current_exposure >= Config.ARB_MAX_EXPOSURE:
                         break
 
-                    # Deduplicate
                     ts_key = signal.market.timestamp
                     if ts_key in self._bet_timestamps["arbitrage"]:
                         continue
 
-                    # Calculate position size
                     if Config.USE_KELLY:
                         amount = kelly_size(
                             signal.confidence,
@@ -351,6 +371,7 @@ class BotEngine:
                             "direction": trade.direction,
                             "amount": trade.amount,
                             "edge_pct": signal.edge_pct,
+                            "source": signal.source,
                         }))
 
                 await asyncio.sleep(Config.ARB_CHECK_INTERVAL)
@@ -358,8 +379,67 @@ class BotEngine:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                log(f"[ARB] Error: {e}")
+                log(f"[HYBRID] Error: {e}")
                 self.events.emit(Event(EventType.ERROR, {"strategy": "arbitrage", "error": str(e)}))
+                await asyncio.sleep(1)
+
+    async def _latency_arb_loop(self):
+        """Layer 2: Consume latency arb signals from Binance feed."""
+        log("[SNIPER] 🎯 Latency arb loop active (Layer 2)")
+
+        while self.running:
+            try:
+                if not self._arb_strategy:
+                    await asyncio.sleep(5)
+                    continue
+
+                signals = self._arb_strategy.consume_latency_signals()
+
+                for signal in signals:
+                    can_trade, reason = self.state.can_trade()
+                    if not can_trade:
+                        continue
+
+                    market = signal.market
+                    if not market or market.closed:
+                        continue
+
+                    direction = signal.momentum.direction
+                    amount = min(signal.recommended_size, self.state.bankroll * 0.15)
+                    amount = max(Config.MIN_BET, amount)
+
+                    trade = self.trader.place_bet(
+                        market=market,
+                        direction=direction,
+                        amount=amount,
+                        strategy="arbitrage",
+                        arbitrage_edge=signal.price_gap * 100,
+                        confidence=min(0.95, 0.5 + signal.momentum.strength * 0.4),
+                    )
+
+                    if trade:
+                        signal.order_sent_at_ms = int(time.time() * 1000)
+                        self._arb_strategy.update_exposure(trade.amount)
+                        self._arb_strategy.stats.latency_pnl += 0  # updated on settlement
+                        log(f"[SNIPER] 🔥 Fired: {direction.upper()} ${amount:.2f} on {market.slug} "
+                            f"| Binance: {signal.momentum.momentum_pct:+.3f}% "
+                            f"| Gap: {signal.price_gap:.4f}")
+                        self.events.emit(Event(EventType.TRADE_PLACED, {
+                            "trade_id": trade.id,
+                            "strategy": "latency_arb",
+                            "direction": direction,
+                            "amount": trade.amount,
+                            "momentum_pct": signal.momentum.momentum_pct,
+                            "price_gap": signal.price_gap,
+                            "latency_ms": signal.latency_ms,
+                        }))
+
+                await asyncio.sleep(0.05)  # 50ms — fast polling for signals
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log(f"[SNIPER] Error: {e}")
                 await asyncio.sleep(1)
 
     # ─── Streak Reversal Strategy Loop ────────────────────────────────────

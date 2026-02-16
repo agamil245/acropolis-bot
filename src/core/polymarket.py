@@ -847,6 +847,135 @@ class PolymarketClient:
             delay_breakdown,
         )
 
+    # ─── Limit Orders & Order Management ─────────────────────────────────
+
+    def place_limit_order(
+        self,
+        token_id: str,
+        price: float,
+        size: float,
+        side: str = "BUY",
+    ) -> Optional[dict]:
+        """Place a limit order (GTC) via CLOB API.
+
+        Args:
+            token_id: Token to trade
+            price: Limit price (0.01 - 0.99)
+            size: Number of shares
+            side: "BUY" or "SELL"
+
+        Returns:
+            Order response dict with orderID, or None on failure
+        """
+        try:
+            from py_clob_client.client import ClobClient
+            from py_clob_client.clob_types import OrderArgs, OrderType
+            from py_clob_client.order_builder.constants import BUY, SELL
+
+            client = ClobClient(
+                host=self.clob,
+                key=Config.PRIVATE_KEY,
+                chain_id=Config.CHAIN_ID,
+                signature_type=Config.SIGNATURE_TYPE,
+                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+            )
+            creds = client.create_or_derive_api_creds()
+            client.set_api_creds(creds)
+
+            order_side = BUY if side.upper() == "BUY" else SELL
+            order_args = OrderArgs(
+                token_id=token_id,
+                price=price,
+                size=size,
+                side=order_side,
+            )
+            signed = client.create_order(order_args)
+            resp = client.post_order(signed, OrderType.GTC)
+            return resp
+        except ImportError:
+            print("[polymarket] py-clob-client not installed for limit orders")
+            return None
+        except Exception as e:
+            print(f"[polymarket] Limit order failed: {e}")
+            return None
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancel an open order by ID."""
+        try:
+            from py_clob_client.client import ClobClient
+            client = ClobClient(
+                host=self.clob,
+                key=Config.PRIVATE_KEY,
+                chain_id=Config.CHAIN_ID,
+                signature_type=Config.SIGNATURE_TYPE,
+                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+            )
+            creds = client.create_or_derive_api_creds()
+            client.set_api_creds(creds)
+            client.cancel(order_id)
+            return True
+        except Exception as e:
+            print(f"[polymarket] Cancel order failed: {e}")
+            return False
+
+    def cancel_all_orders(self) -> bool:
+        """Cancel all open orders."""
+        try:
+            from py_clob_client.client import ClobClient
+            client = ClobClient(
+                host=self.clob,
+                key=Config.PRIVATE_KEY,
+                chain_id=Config.CHAIN_ID,
+                signature_type=Config.SIGNATURE_TYPE,
+                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+            )
+            creds = client.create_or_derive_api_creds()
+            client.set_api_creds(creds)
+            client.cancel_all()
+            return True
+        except Exception as e:
+            print(f"[polymarket] Cancel all failed: {e}")
+            return False
+
+    def get_open_orders(self, market_id: Optional[str] = None) -> list[dict]:
+        """Get all open orders, optionally filtered by market."""
+        try:
+            from py_clob_client.client import ClobClient
+            client = ClobClient(
+                host=self.clob,
+                key=Config.PRIVATE_KEY,
+                chain_id=Config.CHAIN_ID,
+                signature_type=Config.SIGNATURE_TYPE,
+                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+            )
+            creds = client.create_or_derive_api_creds()
+            client.set_api_creds(creds)
+
+            if market_id:
+                orders = client.get_orders(market=market_id)
+            else:
+                orders = client.get_orders()
+            return orders if isinstance(orders, list) else []
+        except Exception as e:
+            print(f"[polymarket] Get open orders failed: {e}")
+            return []
+
+    def get_order_status(self, order_id: str) -> Optional[dict]:
+        """Get status of a specific order."""
+        try:
+            from py_clob_client.client import ClobClient
+            client = ClobClient(
+                host=self.clob,
+                key=Config.PRIVATE_KEY,
+                chain_id=Config.CHAIN_ID,
+            )
+            creds = client.create_or_derive_api_creds()
+            client.set_api_creds(creds)
+            return client.get_order(order_id)
+        except Exception as e:
+            print(f"[polymarket] Get order status failed: {e}")
+            return None
+
     # ─── Wallet Activity (for copytrade) ──────────────────────────────────
 
     def get_wallet_trades(self, wallet: str, limit: int = 10) -> list[dict]:
