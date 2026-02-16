@@ -55,9 +55,12 @@ if [[ -d "$INSTALL_DIR/.git" ]]; then
     git -C "$INSTALL_DIR" pull --ff-only || warn "Pull failed — continuing with existing code"
 else
     echo ""
-    read -rp "GitHub Personal Access Token (for private repo): " GH_TOKEN
-    [[ -z "$GH_TOKEN" ]] && error "Token required — repo is private"
-    REPO_URL="https://${GH_TOKEN}@github.com/agamil245/acropolis-bot.git"
+    read -rp "GitHub Personal Access Token (leave blank if repo is public): " GH_TOKEN
+    if [[ -n "$GH_TOKEN" ]]; then
+        REPO_URL="https://${GH_TOKEN}@github.com/agamil245/acropolis-bot.git"
+    else
+        REPO_URL="https://github.com/agamil245/acropolis-bot.git"
+    fi
     info "Cloning repo to $INSTALL_DIR..."
     git clone "$REPO_URL" "$INSTALL_DIR"
 fi
