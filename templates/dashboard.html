@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AcropolisBot - Trading Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: '#0f172a',
+                            card: '#1e293b',
+                            border: '#334155',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-running { background: #10b981; animation: pulse 2s infinite; }
+        .status-stopped { background: #ef4444; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-6 text-white">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="glass rounded-lg p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold mb-2">⚡ AcropolisBot</h1>
+                    <p class="text-gray-400">Advanced Polymarket Trading Bot</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div id="bot-status" class="flex items-center text-lg">
+                        <span class="status-dot status-stopped" id="status-dot"></span>
+                        <span id="status-text">Stopped</span>
+                    </div>
+                    <button id="start-btn" onclick="startBot()" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg font-semibold transition">
+                        Start Bot
+                    </button>
+                    <button id="stop-btn" onclick="stopBot()" class="bg-red-600 hover:bg-red-700 px-6 py-2 rounded-lg font-semibold transition hidden">
+                        Stop Bot
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="glass rounded-lg p-6">
+                <div class="text-gray-400 text-sm mb-2">Bankroll</div>
+                <div class="text-3xl font-bold" id="bankroll">$100.00</div>
+                <div class="text-sm mt-2" id="total-pnl">Total P&L: $0.00</div>
+            </div>
+            <div class="glass rounded-lg p-6">
+                <div class="text-gray-400 text-sm mb-2">Win Rate</div>
+                <div class="text-3xl font-bold" id="win-rate">0%</div>
+                <div class="text-sm mt-2" id="win-loss">0W / 0L</div>
+            </div>
+            <div class="glass rounded-lg p-6">
+                <div class="text-gray-400 text-sm mb-2">Daily P&L</div>
+                <div class="text-3xl font-bold" id="daily-pnl">$0.00</div>
+                <div class="text-sm mt-2" id="daily-bets">0 bets today</div>
+            </div>
+            <div class="glass rounded-lg p-6">
+                <div class="text-gray-400 text-sm mb-2">Active Trades</div>
+                <div class="text-3xl font-bold" id="pending-trades">0</div>
+                <div class="text-sm mt-2" id="total-trades">0 total</div>
+            </div>
+        </div>
+
+        <!-- Strategies & Markets -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Strategies -->
+            <div class="glass rounded-lg p-6">
+                <h2 class="text-xl font-bold mb-4">📊 Active Strategies</h2>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span>⚡ Micro-Arbitrage</span>
+                        <span id="arb-status" class="text-green-400">Enabled</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span>📈 Streak Reversal</span>
+                        <span id="streak-status" class="text-green-400">Enabled</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span>📋 Copytrade</span>
+                        <span id="copy-status" class="text-gray-500">Disabled</span>
+                    </div>
+                </div>
+                
+                <div class="mt-6 pt-4 border-t border-gray-700">
+                    <h3 class="text-sm font-semibold mb-3 text-gray-400">Strategy Performance</h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span>Arbitrage:</span>
+                            <span id="arb-pnl" class="font-mono">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Streak:</span>
+                            <span id="streak-pnl" class="font-mono">$0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Copytrade:</span>
+                            <span id="copy-pnl" class="font-mono">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Markets -->
+            <div class="glass rounded-lg p-6">
+                <h2 class="text-xl font-bold mb-4">🎯 Active Markets</h2>
+                <div id="active-markets" class="space-y-2">
+                    <div class="text-gray-400">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trade Log -->
+        <div class="glass rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold">📝 Recent Trades</h2>
+                <select id="trade-filter" class="bg-gray-700 rounded px-3 py-1 text-sm" onchange="loadTrades()">
+                    <option value="all">All Trades</option>
+                    <option value="pending">Pending</option>
+                    <option value="settled">Settled</option>
+                </select>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="border-b border-gray-700">
+                        <tr>
+                            <th class="text-left py-2">Time</th>
+                            <th class="text-left py-2">Market</th>
+                            <th class="text-left py-2">Strategy</th>
+                            <th class="text-left py-2">Direction</th>
+                            <th class="text-right py-2">Amount</th>
+                            <th class="text-right py-2">Price</th>
+                            <th class="text-left py-2">Status</th>
+                            <th class="text-right py-2">P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-table" class="divide-y divide-gray-700">
+                        <tr>
+                            <td colspan="8" class="text-center py-8 text-gray-400">No trades yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        
+        // Connect to WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'status') {
+                    updateStatus(message.data);
+                } else if (message.type === 'trade') {
+                    addTradeToTable(message.data);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 2000);
+            };
+        }
+        
+        // Update dashboard status
+        function updateStatus(data) {
+            // Bot status
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            
+            if (data.running) {
+                statusDot.className = 'status-dot status-running';
+                statusText.textContent = 'Running';
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+            } else {
+                statusDot.className = 'status-dot status-stopped';
+                statusText.textContent = 'Stopped';
+                startBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+            }
+            
+            // Stats
+            document.getElementById('bankroll').textContent = `$${data.bankroll.toFixed(2)}`;
+            document.getElementById('total-pnl').textContent = `Total P&L: $${data.total_pnl.toFixed(2)}`;
+            document.getElementById('win-rate').textContent = `${data.win_rate.toFixed(1)}%`;
+            document.getElementById('win-loss').textContent = `${data.wins}W / ${data.losses}L`;
+            document.getElementById('daily-pnl').textContent = `$${data.daily_pnl.toFixed(2)}`;
+            document.getElementById('daily-bets').textContent = `${data.daily_bets} bets today`;
+            document.getElementById('pending-trades').textContent = data.pending_trades;
+            document.getElementById('total-trades').textContent = `${data.total_trades} total`;
+            
+            // Strategy stats
+            if (data.strategy_stats) {
+                document.getElementById('arb-pnl').textContent = `$${data.strategy_stats.arbitrage.pnl.toFixed(2)}`;
+                document.getElementById('streak-pnl').textContent = `$${data.strategy_stats.streak.pnl.toFixed(2)}`;
+                document.getElementById('copy-pnl').textContent = `$${data.strategy_stats.copytrade.pnl.toFixed(2)}`;
+            }
+            
+            // Strategy status
+            if (data.strategies) {
+                document.getElementById('arb-status').textContent = data.strategies.arbitrage ? 'Enabled' : 'Disabled';
+                document.getElementById('arb-status').className = data.strategies.arbitrage ? 'text-green-400' : 'text-gray-500';
+                
+                document.getElementById('streak-status').textContent = data.strategies.streak ? 'Enabled' : 'Disabled';
+                document.getElementById('streak-status').className = data.strategies.streak ? 'text-green-400' : 'text-gray-500';
+                
+                document.getElementById('copy-status').textContent = data.strategies.copytrade ? 'Enabled' : 'Disabled';
+                document.getElementById('copy-status').className = data.strategies.copytrade ? 'text-green-400' : 'text-gray-500';
+            }
+            
+            // Active markets
+            if (data.active_markets) {
+                const marketsDiv = document.getElementById('active-markets');
+                marketsDiv.innerHTML = data.active_markets.map(m => 
+                    `<div class="flex items-center justify-between py-1">
+                        <span>🎯 ${m}</span>
+                        <span class="text-green-400 text-xs">Active</span>
+                    </div>`
+                ).join('');
+            }
+        }
+        
+        // Load trades
+        async function loadTrades() {
+            const filter = document.getElementById('trade-filter').value;
+            const response = await fetch('/api/trades?limit=50');
+            const data = await response.json();
+            
+            let trades = data.trades || [];
+            
+            // Apply filter
+            if (filter === 'pending') {
+                trades = trades.filter(t => t.status === 'pending');
+            } else if (filter === 'settled') {
+                trades = trades.filter(t => t.status === 'settled');
+            }
+            
+            const tbody = document.getElementById('trades-table');
+            
+            if (trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-400">No trades yet</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = trades.map(trade => {
+                const statusBadge = trade.status === 'pending' 
+                    ? '<span class="text-yellow-400">Pending</span>'
+                    : trade.won 
+                        ? '<span class="text-green-400">✓ Won</span>'
+                        : '<span class="text-red-400">✗ Lost</span>';
+                
+                const pnlColor = trade.pnl > 0 ? 'text-green-400' : trade.pnl < 0 ? 'text-red-400' : 'text-gray-400';
+                
+                return `
+                    <tr class="hover:bg-gray-700/30">
+                        <td class="py-2">${trade.timestamp.split(' ')[1]}</td>
+                        <td class="py-2"><span class="text-xs">${trade.market}</span></td>
+                        <td class="py-2"><span class="px-2 py-1 bg-gray-700 rounded text-xs">${trade.strategy}</span></td>
+                        <td class="py-2">${trade.direction}</td>
+                        <td class="py-2 text-right">$${trade.amount.toFixed(2)}</td>
+                        <td class="py-2 text-right">${trade.price.toFixed(4)}</td>
+                        <td class="py-2">${statusBadge}</td>
+                        <td class="py-2 text-right ${pnlColor} font-mono">$${trade.pnl.toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // Start bot
+        async function startBot() {
+            try {
+                const response = await fetch('/api/start', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    console.log('Bot started');
+                } else {
+                    alert('Error starting bot: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error starting bot: ' + error.message);
+            }
+        }
+        
+        // Stop bot
+        async function stopBot() {
+            try {
+                const response = await fetch('/api/stop', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    console.log('Bot stopped');
+                } else {
+                    alert('Error stopping bot: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error stopping bot: ' + error.message);
+            }
+        }
+        
+        // Initialize
+        connectWebSocket();
+        loadTrades();
+        
+        // Reload trades every 5 seconds
+        setInterval(loadTrades, 5000);
+    </script>
+</body>
+</html>
