@@ -2,6 +2,77 @@
 
 > **Advanced Polymarket Trading Bot with Micro-Arbitrage**
 
+---
+
+## 🚀 One-Click Deploy
+
+Deploy on any Ubuntu/Debian VPS in one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/agamil245/acropolis-bot/main/deploy.sh | sudo bash
+```
+
+Or clone first:
+
+```bash
+git clone https://github.com/agamil245/acropolis-bot.git
+cd acropolis-bot
+sudo bash deploy.sh
+```
+
+The script handles everything: Docker, nginx reverse proxy with basic auth, `.env` configuration, and container orchestration.
+
+---
+
+## 🐳 Docker Architecture
+
+```
+Internet → :80 nginx (basic auth) → :8080 acropolis-bot (FastAPI + bot engine)
+```
+
+| Service | Image | Role |
+|---------|-------|------|
+| `acropolis` | Custom (Python 3.12 + uv) | Bot engine + web dashboard |
+| `nginx` | nginx:alpine | Reverse proxy, basic auth, WebSocket support |
+
+**Volumes:** `.env`, `data/` (paper trade state), `logs/`, nginx config, `.htpasswd`
+
+### Manual Docker commands
+
+```bash
+cd /opt/acropolis-bot
+docker compose up -d --build   # Start
+docker compose logs -f          # Logs
+docker compose down             # Stop
+docker compose restart          # Restart
+```
+
+---
+
+## 🖥️ PM2 Alternative (No Docker)
+
+If you prefer running directly on the host:
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone & setup
+git clone https://github.com/agamil245/acropolis-bot.git
+cd acropolis-bot
+uv sync
+cp .env.example .env && nano .env
+
+# Install PM2
+npm install -g pm2
+
+# Start
+pm2 start "uv run python main.py" --name acropolis-bot
+pm2 save && pm2 startup
+```
+
+---
+
 A sophisticated, multi-strategy trading bot for Polymarket's crypto prediction markets. Built with Python, FastAPI, and WebSockets for real-time trading and monitoring.
 
 ## 🎯 Features
