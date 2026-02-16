@@ -368,28 +368,48 @@ class SpreadFarmer:
                 except Exception:
                     pass
 
-        # Check cycles for completion
+        # Check cycles for completion (only log once per cycle)
         for cycle in self.active_cycles:
-            if cycle.both_filled and not cycle.settled:
+            if cycle.both_filled and not cycle.settled and not getattr(cycle, '_logged_full', False):
                 self.stats.full_fills += 1
+                cycle._logged_full = True
                 print(f"[SPREAD] 🎯 FULL FILL on {cycle.market_slug}: "
                       f"cost={cycle.total_cost:.4f}, expected_profit=${cycle.expected_profit:.4f}")
-            elif cycle.partial_fill:
-                # Track partials but don't count until settled
-                pass
+            elif cycle.partial_fill and not getattr(cycle, '_logged_partial', False):
+                cycle._logged_partial = True
+                filled_side = "YES" if (cycle.yes_order and cycle.yes_order.filled) else "NO"
+                print(f"[SPREAD] ⚠️ Partial fill ({filled_side}) on {cycle.market_slug}")
 
     async def _check_paper_fill(self, order: SpreadOrder) -> bool:
-        """Simulate fill in paper mode using cached orderbook."""
+        """Simulate fill in paper mode using cached orderbook.
+        
+        In paper mode, we simulate realistic fill rates:
+        - Orders closer to mid fill faster
+        - ~5-15% chance per check (called every few seconds)
+        - Orders older than 60s get slightly higher fill probability
+        """
+        import random
+        
+        age = time.time() - order.placed_at
+        
         if self.market_cache:
             mid = self.market_cache.get_mid(order.token_id)
             if mid is not None:
-                # Fill if market best ask drops to or below our bid
-                return mid <= order.price + 0.01
-        # Fallback: probabilistic fill based on how close to mid
-        # More aggressive bids (closer to mid) fill more often
-        import random
-        fill_prob = max(0.1, 1.0 - abs(0.50 - order.price) * 4)
-        return random.random() < fill_prob * 0.3  # ~30% per check at mid
+                # Fill if market price crosses our limit
+                if mid <= order.price + 0.005:
+                    # Even when price is right, don't always fill instantly
+                    return random.random() < 0.15  # 15% per check
+                return False
+        
+        # Fallback: time-based probability (no market data)
+        # Orders fill ~once per 30-60 seconds on average
+        base_prob = 0.03  # 3% per check
+        if age > 60:
+            base_prob = 0.06  # 6% after 1 minute
+        if age > 120:
+            base_prob = 0.10  # 10% after 2 minutes
+        
+        return random.random() < base_prob
 
     async def refresh_orders(self):
         """Cancel stale orders and repost at current levels."""

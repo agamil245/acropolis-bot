@@ -286,7 +286,8 @@ async def start_bot():
     if bot and bot.running:
         return JSONResponse({"error": "Bot already running"}, status_code=400)
     try:
-        bot = BotEngine()
+        if not bot:
+            bot = BotEngine()
         bot_task = asyncio.create_task(bot.start())
         await _broadcast_status()
         return JSONResponse({"success": True, "message": "Bot started"})

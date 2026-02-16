@@ -1,13 +1,32 @@
 #!/usr/bin/env python3
 """
 AcropolisBot - Advanced Polymarket Trading Bot
-Main entry point for starting the bot
+Main entry point: starts both the trading bot AND web dashboard.
 """
 
 import asyncio
 import sys
+import threading
+
+import uvicorn
 
 from src.bot_engine import BotEngine
+from src.config import Config
+
+
+def run_web_server(bot_engine: BotEngine):
+    """Run the FastAPI web server in a separate thread."""
+    # Inject bot into the web server module
+    import src.web.server as web
+    web.bot = bot_engine
+
+    uvicorn.run(
+        "src.web.server:app",
+        host=Config.WEB_HOST,
+        port=Config.WEB_PORT,
+        reload=False,
+        log_level="warning",  # Quiet — bot logs are enough
+    )
 
 
 async def main():
@@ -18,10 +37,15 @@ async def main():
     ║  Advanced Polymarket Trading Bot      ║
     ╚══════════════════════════════════════╝
     """)
-    
-    # Initialize and start bot
+
+    # Initialize bot
     bot = BotEngine()
-    
+
+    # Start web server in background thread
+    web_thread = threading.Thread(target=run_web_server, args=(bot,), daemon=True)
+    web_thread.start()
+    print(f"\n🌐 Dashboard → http://{Config.WEB_HOST}:{Config.WEB_PORT}\n")
+
     try:
         await bot.start()
     except KeyboardInterrupt:
@@ -29,6 +53,8 @@ async def main():
         await bot.stop()
     except Exception as e:
         print(f"\n[MAIN] Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
         await bot.stop()
         sys.exit(1)
 

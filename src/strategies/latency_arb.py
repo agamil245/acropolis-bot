@@ -216,11 +216,44 @@ class BinancePriceTracker:
 # BINANCE WEBSOCKET
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class BinanceWebSocket:
-    """Async WebSocket connection to Binance combined trade streams.
+class ExchangeWebSocket:
+    """Async WebSocket connection to exchange trade streams.
 
-    Connects to: wss://stream.binance.com:9443/stream?streams=...
+    Tries Binance first, falls back to Bybit if blocked (HTTP 451).
+    Connects to combined trade streams for BTC/ETH/SOL.
     """
+
+    # Exchange configs: (url, subscribe_msg_fn, parse_fn)
+    EXCHANGES = [
+        {
+            "name": "Binance",
+            "url": f"{Config.BINANCE_WS_URL}/stream?streams=btcusdt@trade/ethusdt@trade/solusdt@trade",
+            "subscribe": None,  # Binance uses URL-based subscription
+            "parse": "_parse_binance",
+        },
+        {
+            "name": "Bybit",
+            "url": "wss://stream.bybit.com/v5/public/spot",
+            "subscribe": {
+                "op": "subscribe",
+                "args": ["publicTrade.BTCUSDT", "publicTrade.ETHUSDT", "publicTrade.SOLUSDT"]
+            },
+            "parse": "_parse_bybit",
+        },
+        {
+            "name": "OKX",
+            "url": "wss://ws.okx.com:8443/ws/v5/public",
+            "subscribe": {
+                "op": "subscribe",
+                "args": [
+                    {"channel": "trades", "instId": "BTC-USDT"},
+                    {"channel": "trades", "instId": "ETH-USDT"},
+                    {"channel": "trades", "instId": "SOL-USDT"},
+                ]
+            },
+            "parse": "_parse_okx",
+        },
+    ]
 
     def __init__(
         self,
@@ -233,10 +266,10 @@ class BinanceWebSocket:
         self._ws = None
         self._task: Optional[asyncio.Task] = None
         self.stats = LatencyArbStats()
+        self._current_exchange: Optional[dict] = None
 
-        # Build stream URL
-        streams = "btcusdt@trade/ethusdt@trade/solusdt@trade"
-        self.url = f"{Config.BINANCE_WS_URL}/stream?streams={streams}"
+        # Start with Binance URL for backward compat
+        self.url = self.EXCHANGES[0]["url"]
 
     async def start(self):
         """Start the WebSocket connection."""
@@ -261,24 +294,37 @@ class BinanceWebSocket:
                 pass
 
     async def _connect_loop(self):
-        """Main connection loop with reconnection."""
+        """Main connection loop with reconnection and exchange fallback."""
         try:
             import websockets
         except ImportError:
-            print("[BINANCE] ❌ websockets package required: pip install websockets")
+            print("[EXCHANGE] ❌ websockets package required: pip install websockets")
             return
 
+        exchange_idx = 0
+
         while self._running:
+            exchange = self.EXCHANGES[exchange_idx % len(self.EXCHANGES)]
+            self._current_exchange = exchange
+            name = exchange["name"]
+
             try:
                 async with websockets.connect(
-                    self.url,
+                    exchange["url"],
                     ping_interval=20,
                     ping_timeout=10,
                     close_timeout=3,
-                    max_size=2**20,  # 1MB
+                    max_size=2**20,
                 ) as ws:
                     self._ws = ws
-                    print(f"[BINANCE] ✅ Connected to {self.url[:60]}...")
+                    print(f"[{name.upper()}] ✅ Connected to {exchange['url'][:60]}...")
+
+                    # Send subscribe message if needed
+                    if exchange.get("subscribe"):
+                        await ws.send(json.dumps(exchange["subscribe"]))
+
+                    # Reset reconnect counter on success
+                    self.stats.ws_reconnects = 0
 
                     async for message in ws:
                         if not self._running:
@@ -290,9 +336,17 @@ class BinanceWebSocket:
             except Exception as e:
                 if self._running:
                     self.stats.ws_reconnects += 1
-                    wait = min(30, 2 ** min(self.stats.ws_reconnects, 5))
-                    print(f"[BINANCE] ⚠️ Disconnected: {e}, reconnecting in {wait}s...")
-                    await asyncio.sleep(wait)
+                    err_str = str(e)
+
+                    # If blocked (451) or forbidden, try next exchange
+                    if "451" in err_str or "403" in err_str or "refused" in err_str.lower():
+                        print(f"[{name.upper()}] ❌ Blocked ({e}), trying next exchange...")
+                        exchange_idx += 1
+                        await asyncio.sleep(2)
+                    else:
+                        wait = min(30, 2 ** min(self.stats.ws_reconnects, 5))
+                        print(f"[{name.upper()}] ⚠️ Disconnected: {e}, reconnecting in {wait}s...")
+                        await asyncio.sleep(wait)
 
     def _handle_message(self, raw: str | bytes):
         """Handle incoming message. SPEED CRITICAL PATH."""
@@ -305,20 +359,13 @@ class BinanceWebSocket:
         except (json.JSONDecodeError, UnicodeDecodeError):
             return
 
-        # Combined stream format: {"stream": "btcusdt@trade", "data": {...}}
-        payload = data.get("data", data)
-        event_type = payload.get("e")
-
-        if event_type != "trade":
+        if not self._current_exchange:
             return
 
-        trade = BinanceTrade(
-            symbol=payload.get("s", ""),
-            price=float(payload.get("p", 0)),
-            quantity=float(payload.get("q", 0)),
-            timestamp_ms=int(payload.get("T", 0)),
-            is_buyer_maker=payload.get("m", False),
-        )
+        parse_method = self._current_exchange.get("parse", "_parse_binance")
+        trade = getattr(self, parse_method)(data)
+        if trade is None:
+            return
 
         # Feed to tracker (fast path)
         self.tracker.on_trade(trade)
@@ -329,6 +376,58 @@ class BinanceWebSocket:
             for sig in signals:
                 self.stats.signals_detected += 1
                 self._on_signal(sig)
+
+    def _parse_binance(self, data: dict) -> Optional[BinanceTrade]:
+        """Parse Binance combined stream trade message."""
+        payload = data.get("data", data)
+        if payload.get("e") != "trade":
+            return None
+        return BinanceTrade(
+            symbol=payload.get("s", ""),
+            price=float(payload.get("p", 0)),
+            quantity=float(payload.get("q", 0)),
+            timestamp_ms=int(payload.get("T", 0)),
+            is_buyer_maker=payload.get("m", False),
+        )
+
+    def _parse_bybit(self, data: dict) -> Optional[BinanceTrade]:
+        """Parse Bybit v5 public trade message."""
+        topic = data.get("topic", "")
+        if not topic.startswith("publicTrade."):
+            return None
+        trades = data.get("data", [])
+        if not trades:
+            return None
+        t = trades[-1]  # Latest trade
+        symbol = t.get("s", "").upper()  # "BTCUSDT"
+        return BinanceTrade(
+            symbol=symbol,
+            price=float(t.get("p", 0)),
+            quantity=float(t.get("v", 0)),
+            timestamp_ms=int(t.get("T", 0)),
+            is_buyer_maker=t.get("S") == "Sell",
+        )
+
+    def _parse_okx(self, data: dict) -> Optional[BinanceTrade]:
+        """Parse OKX trade message."""
+        if "data" not in data or "arg" not in data:
+            return None
+        arg = data["arg"]
+        if arg.get("channel") != "trades":
+            return None
+        trades = data["data"]
+        if not trades:
+            return None
+        t = trades[-1]
+        # OKX instId: "BTC-USDT" -> "BTCUSDT"
+        inst = t.get("instId", "").replace("-", "")
+        return BinanceTrade(
+            symbol=inst,
+            price=float(t.get("px", 0)),
+            quantity=float(t.get("sz", 0)),
+            timestamp_ms=int(t.get("ts", 0)),
+            is_buyer_maker=t.get("side") == "sell",
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -360,7 +459,7 @@ class LatencyArb:
 
         # Binance components
         self.tracker = BinancePriceTracker()
-        self.binance_ws = BinanceWebSocket(
+        self.binance_ws = ExchangeWebSocket(
             tracker=self.tracker,
             on_signal=self._on_momentum_signal,
         )
