@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/agamil245/acropolis-bot.git"
 INSTALL_DIR="/opt/acropolis-bot"
 
 GREEN='\033[0;32m'
@@ -55,6 +54,10 @@ if [[ -d "$INSTALL_DIR/.git" ]]; then
     info "Repo exists at $INSTALL_DIR — pulling latest..."
     git -C "$INSTALL_DIR" pull --ff-only || warn "Pull failed — continuing with existing code"
 else
+    echo ""
+    read -rp "GitHub Personal Access Token (for private repo): " GH_TOKEN
+    [[ -z "$GH_TOKEN" ]] && error "Token required — repo is private"
+    REPO_URL="https://${GH_TOKEN}@github.com/agamil245/acropolis-bot.git"
     info "Cloning repo to $INSTALL_DIR..."
     git clone "$REPO_URL" "$INSTALL_DIR"
 fi
