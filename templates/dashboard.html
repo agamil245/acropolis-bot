@@ -3,252 +3,364 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AcropolisBot — Command Center</title>
+    <title>AcropolisBot — Trading Terminal</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        navy: { 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569' },
+                        base: '#0a0e17',
+                        card: '#111827',
+                        border: '#1e293b',
                         profit: '#10b981',
                         loss: '#ef4444',
-                        accent: '#6366f1',
+                        info: '#3b82f6',
+                        warn: '#f59e0b',
+                        purple: '#8b5cf6',
                     },
-                    fontFamily: { mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'] },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+                    },
                 }
             }
         }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         * { font-family: 'Inter', system-ui, sans-serif; }
-        body { background: #080d1a; }
+        body { background: #0a0e17; }
+        
+        /* Cards */
         .card {
-            background: rgba(15, 23, 42, 0.85);
-            border: 1px solid rgba(51, 65, 85, 0.4);
-            backdrop-filter: blur(12px);
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
         }
-        .card-glow { box-shadow: 0 0 0 1px rgba(99,102,241,0.08), 0 4px 24px rgba(0,0,0,0.3); }
-        .pulse-green { animation: pulseG 2s ease-in-out infinite; }
-        @keyframes pulseG { 0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.4)} 50%{box-shadow:0 0 0 8px rgba(16,185,129,0)} }
-        .pulse-red { animation: pulseR 2s ease-in-out infinite; }
-        @keyframes pulseR { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
-        .toggle-track { width:44px; height:24px; border-radius:12px; transition:background .2s; cursor:pointer; position:relative; }
-        .toggle-track.on { background:#10b981; }
-        .toggle-track.off { background:#475569; }
-        .toggle-thumb { width:20px; height:20px; border-radius:50%; background:#fff; position:absolute; top:2px; transition:left .2s; }
-        .toggle-track.on .toggle-thumb { left:22px; }
-        .toggle-track.off .toggle-thumb { left:2px; }
-        .trade-log { max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
-        .trade-log::-webkit-scrollbar { width:6px; }
-        .trade-log::-webkit-scrollbar-thumb { background:#334155; border-radius:3px; }
-        .shimmer { background: linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.05) 50%, transparent 100%); background-size: 200% 100%; animation: shimmer 2s infinite; }
-        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        .ws-badge { font-size:10px; padding:2px 8px; border-radius:9999px; }
-        .fade-in { animation: fadeIn .3s ease; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
-        .modal-bg { background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); }
+        
+        /* Glow effects */
+        .glow-green { text-shadow: 0 0 20px rgba(16, 185, 129, 0.5), 0 0 40px rgba(16, 185, 129, 0.2); }
+        .glow-red { text-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 0 40px rgba(239, 68, 68, 0.2); }
+        
+        /* Pulse animations */
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,0.6); } 50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(16,185,129,0); } }
+        .pulse-green { animation: pulse-dot 2s ease-in-out infinite; }
+        @keyframes pulse-red-dot { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.6); } 50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+        .pulse-red { animation: pulse-red-dot 2s ease-in-out infinite; }
+        
+        /* Toggle switch */
+        .toggle { width: 40px; height: 22px; border-radius: 11px; cursor: pointer; position: relative; transition: background 0.2s; }
+        .toggle.on { background: #10b981; }
+        .toggle.off { background: #374151; }
+        .toggle::after { content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 2px; transition: left 0.2s; }
+        .toggle.on::after { left: 20px; }
+        .toggle.off::after { left: 2px; }
+        
+        /* Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+        .custom-scroll { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+        
+        /* Fade in */
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeSlideIn 0.3s ease-out; }
+        
+        /* Number animation */
+        .num-animate { transition: all 0.3s ease; }
+        
+        /* Chip buttons */
+        .chip { padding: 4px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: 1px solid transparent; }
+        .chip.active { background: rgba(59,130,246,0.2); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
+        .chip.inactive { background: rgba(31,41,55,0.5); color: #6b7280; border-color: #1e293b; }
+        .chip:hover { filter: brightness(1.2); }
+        
+        /* Time toggle buttons */
+        .time-btn { padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .time-btn.active { background: #3b82f6; color: white; }
+        .time-btn.inactive { background: transparent; color: #6b7280; }
+        .time-btn:hover { color: #d1d5db; }
+        
+        /* Modal */
+        .modal-overlay { background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); }
+        
+        /* Win rate ring */
+        .ring-container { position: relative; width: 72px; height: 72px; }
+        .ring-container svg { transform: rotate(-90deg); }
+        .ring-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+        
+        /* Strategy card hover */
+        .strat-card { transition: border-color 0.2s, box-shadow 0.2s; }
+        .strat-card:hover { border-color: #374151; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+        
+        /* Paper section */
+        .paper-section { border: 1px solid rgba(139, 92, 246, 0.3); background: linear-gradient(135deg, rgba(139,92,246,0.03) 0%, rgba(17,24,39,1) 100%); }
+        
+        /* Trade row highlight */
+        .trade-row-win { border-left: 2px solid #10b981; }
+        .trade-row-loss { border-left: 2px solid #ef4444; }
+        .trade-row-pending { border-left: 2px solid #f59e0b; }
     </style>
 </head>
-<body class="min-h-screen text-gray-100">
+<body class="min-h-screen text-gray-100 antialiased">
 
-<!-- ════════════════════════════════ TOP BAR ════════════════════════════════ -->
-<header class="sticky top-0 z-50 border-b border-navy-700/50" style="background:rgba(8,13,26,0.92);backdrop-filter:blur(16px)">
-    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">⚡ AcropolisBot</div>
-            <span id="mode-badge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 uppercase tracking-wider">PAPER</span>
-        </div>
+<!-- ══════════════════════════ TOP NAV BAR ══════════════════════════ -->
+<header class="sticky top-0 z-50 border-b border-border/60" style="background:rgba(10,14,23,0.95);backdrop-filter:blur(20px);">
+    <div class="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between">
+        <!-- Left: Logo -->
         <div class="flex items-center gap-4">
             <div class="flex items-center gap-2">
-                <div id="ws-indicator" class="w-2 h-2 rounded-full bg-gray-600"></div>
-                <span id="ws-text" class="text-xs text-gray-500">Connecting…</span>
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-sm font-black text-white">A</div>
+                <span class="text-lg font-bold tracking-tight">AcropolisBot</span>
             </div>
+            <span id="mode-badge" class="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-widest bg-yellow-500/15 text-yellow-400 border border-yellow-500/20">PAPER</span>
+        </div>
+        
+        <!-- Center: Connection + Clock -->
+        <div class="flex items-center gap-6">
             <div class="flex items-center gap-2">
-                <div id="status-dot" class="w-3 h-3 rounded-full bg-red-500"></div>
-                <span id="status-text" class="text-sm font-medium">Stopped</span>
+                <div id="ws-dot" class="w-2 h-2 rounded-full bg-gray-600"></div>
+                <span id="ws-text" class="text-[11px] text-gray-500 font-medium">Connecting…</span>
             </div>
-            <button id="bot-toggle-btn" onclick="toggleBot()" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30">
+            <div id="live-clock" class="text-sm font-mono text-gray-400 tabular-nums">00:00:00</div>
+        </div>
+        
+        <!-- Right: Controls -->
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 mr-2">
+                <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                <span id="status-text" class="text-xs font-semibold text-gray-400">Stopped</span>
+            </div>
+            <button id="bot-toggle-btn" onclick="toggleBot()" class="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 bg-profit hover:brightness-110 text-white shadow-lg shadow-profit/20">
                 Start Bot
             </button>
-            <button onclick="openSettings()" class="p-2 rounded-lg hover:bg-navy-700/60 transition" title="Settings">
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+            <button onclick="openSettings()" class="p-2 rounded-lg hover:bg-white/5 transition text-gray-500 hover:text-gray-300" title="Settings">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
         </div>
     </div>
 </header>
 
-<main class="max-w-[1440px] mx-auto px-4 sm:px-6 py-6 space-y-6">
+<main class="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
 
-<!-- ════════════════════════════ STAT CARDS ROW ════════════════════════════ -->
+<!-- ══════════════════════════ STATS ROW ══════════════════════════ -->
 <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
-    <div class="card card-glow rounded-xl p-5">
-        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Bankroll</div>
-        <div class="text-2xl sm:text-3xl font-bold font-mono" id="bankroll">$100.00</div>
-        <div class="text-xs mt-2 font-mono" id="total-pnl-label">P&L <span id="total-pnl" class="text-gray-400">$0.00</span></div>
-    </div>
-    <div class="card card-glow rounded-xl p-5">
-        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Win Rate</div>
-        <div class="text-2xl sm:text-3xl font-bold font-mono" id="win-rate">0%</div>
-        <div class="text-xs mt-2 text-gray-400" id="win-loss">0W / 0L</div>
-    </div>
-    <div class="card card-glow rounded-xl p-5">
-        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Daily P&L</div>
-        <div class="text-2xl sm:text-3xl font-bold font-mono" id="daily-pnl">$0.00</div>
-        <div class="text-xs mt-2 text-gray-400" id="daily-bets">0 bets today</div>
-    </div>
-    <div class="card card-glow rounded-xl p-5">
-        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Pending</div>
-        <div class="text-2xl sm:text-3xl font-bold font-mono" id="pending-trades">0</div>
-        <div class="text-xs mt-2 text-gray-400" id="total-trades">0 total trades</div>
-    </div>
-    <div class="card card-glow rounded-xl p-5">
-        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Uptime</div>
-        <div class="text-2xl sm:text-3xl font-bold font-mono" id="uptime">00:00:00</div>
-        <div class="text-xs mt-2 text-gray-400" id="uptime-label">hh:mm:ss</div>
-    </div>
-</div>
-
-<!-- ════════════════════════ STRATEGIES + MARKETS ════════════════════════ -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-    <!-- Strategy Cards -->
-    <div class="lg:col-span-2 space-y-4">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Strategies</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="strategy-cards">
-            <!-- Rendered by JS -->
+    <!-- Bankroll -->
+    <div class="card p-5">
+        <div class="flex items-center gap-2 mb-3">
+            <div class="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <svg class="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.736 6.979C9.208 6.193 9.696 6 10 6c.304 0 .792.193 1.264.979a1 1 0 001.715-1.029C12.279 4.784 11.232 4 10 4s-2.279.784-2.979 1.95c-.285.475-.507 1-.67 1.55H6a1 1 0 000 2h.013a9.358 9.358 0 000 1H6a1 1 0 100 2h.351c.163.55.385 1.075.67 1.55C7.721 15.216 8.768 16 10 16s2.279-.784 2.979-1.95a1 1 0 10-1.715-1.029c-.472.786-.96.979-1.264.979-.304 0-.792-.193-1.264-.979a5.38 5.38 0 01-.491-.971H10a1 1 0 100-2H8.003a7.364 7.364 0 010-1H10a1 1 0 100-2H8.245c.155-.339.328-.654.491-.971z"/></svg>
+            </div>
+            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Total Bankroll</span>
         </div>
+        <div class="text-3xl font-bold font-mono num-animate" id="bankroll">$100.00</div>
+        <div class="text-xs mt-2 text-gray-500">USDC</div>
     </div>
-
-    <!-- Market Selector -->
-    <div class="space-y-4">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Markets</h2>
-        <div class="card card-glow rounded-xl p-5">
-            <div class="grid grid-cols-1 gap-1" id="market-grid">
-                <!-- Rendered by JS -->
+    
+    <!-- Today's P&L -->
+    <div class="card p-5">
+        <div class="flex items-center gap-2 mb-3">
+            <div class="w-7 h-7 rounded-full bg-profit/10 flex items-center justify-center">
+                <svg class="w-4 h-4 text-profit" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Today's P&L</span>
+        </div>
+        <div class="text-3xl font-bold font-mono num-animate" id="daily-pnl">$0.00</div>
+        <div class="text-xs mt-2 font-mono" id="daily-pnl-pct">0.00%</div>
+    </div>
+    
+    <!-- Win Rate (ring) -->
+    <div class="card p-5">
+        <div class="flex items-center gap-2 mb-2">
+            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Win Rate</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="ring-container">
+                <svg width="72" height="72" viewBox="0 0 72 72">
+                    <circle cx="36" cy="36" r="30" fill="none" stroke="#1e293b" stroke-width="5"/>
+                    <circle id="win-ring" cx="36" cy="36" r="30" fill="none" stroke="#10b981" stroke-width="5" stroke-dasharray="0 188.5" stroke-linecap="round" style="transition: stroke-dasharray 0.8s ease;"/>
+                </svg>
+                <div class="ring-value">
+                    <span class="text-lg font-bold font-mono" id="win-rate">0%</span>
+                </div>
+            </div>
+            <div class="text-xs text-gray-500 space-y-1">
+                <div><span class="text-profit font-mono font-semibold" id="wins">0</span> W</div>
+                <div><span class="text-loss font-mono font-semibold" id="losses">0</span> L</div>
             </div>
         </div>
     </div>
+    
+    <!-- Active Trades -->
+    <div class="card p-5">
+        <div class="flex items-center gap-2 mb-3">
+            <div class="w-7 h-7 rounded-full bg-warn/10 flex items-center justify-center">
+                <svg class="w-4 h-4 text-warn" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Active Trades</span>
+        </div>
+        <div class="text-3xl font-bold font-mono num-animate" id="pending-trades">0</div>
+        <div class="text-xs mt-2 text-gray-500">Pending settlement</div>
+    </div>
+    
+    <!-- Total Trades -->
+    <div class="card p-5">
+        <div class="flex items-center gap-2 mb-3">
+            <div class="w-7 h-7 rounded-full bg-purple/10 flex items-center justify-center">
+                <svg class="w-4 h-4 text-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            </div>
+            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Total Trades</span>
+        </div>
+        <div class="text-3xl font-bold font-mono num-animate" id="total-trades">0</div>
+        <div class="text-xs mt-2 text-gray-500" id="daily-bets-label">0 today</div>
+    </div>
 </div>
 
-<!-- ════════════════════════ PAPER TRADING ════════════════════════ -->
-<div id="paper-banner" class="hidden rounded-xl px-5 py-3 text-center font-semibold text-sm" style="background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.3);color:#c4b5fd">
-    📝 PAPER TRADING MODE ACTIVE — Virtual money only
-</div>
-
-<div class="card card-glow rounded-xl p-5">
+<!-- ══════════════════════════ P&L CHART ══════════════════════════ -->
+<div class="card p-6">
     <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-            <span class="text-lg">📝</span> Paper Trading
-        </h2>
-        <div class="flex items-center gap-3">
-            <button onclick="exportPaperTrades()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-navy-700 hover:bg-navy-600 transition text-gray-300" title="Export trade log">
-                📥 Export
-            </button>
-            <button onclick="resetPaper()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-navy-700 hover:bg-navy-600 transition text-gray-300" title="Reset paper trading">
-                🔄 Reset
-            </button>
-            <button id="paper-toggle-btn" onclick="togglePaper()" class="px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200" style="background:#7c3aed;color:#fff">
-                Start Paper
-            </button>
+        <div>
+            <h2 class="text-sm font-bold text-gray-200">Cumulative P&L</h2>
+            <div class="text-2xl font-bold font-mono mt-1" id="chart-pnl-value">$0.00</div>
+        </div>
+        <div class="flex items-center gap-1 bg-base/50 rounded-lg p-1">
+            <button class="time-btn active" data-range="1h" onclick="setChartRange('1h')">1H</button>
+            <button class="time-btn inactive" data-range="6h" onclick="setChartRange('6h')">6H</button>
+            <button class="time-btn inactive" data-range="24h" onclick="setChartRange('24h')">24H</button>
+            <button class="time-btn inactive" data-range="7d" onclick="setChartRange('7d')">7D</button>
         </div>
     </div>
-
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
-        <div>
-            <div class="text-xs text-gray-500 uppercase tracking-wider">Virtual Bankroll</div>
-            <div class="text-xl font-bold font-mono mt-1" id="paper-bankroll">$1,000.00</div>
-        </div>
-        <div>
-            <div class="text-xs text-gray-500 uppercase tracking-wider">Virtual P&L</div>
-            <div class="text-xl font-bold font-mono mt-1" id="paper-pnl">$0.00</div>
-        </div>
-        <div>
-            <div class="text-xs text-gray-500 uppercase tracking-wider">Win Rate</div>
-            <div class="text-xl font-bold font-mono mt-1" id="paper-winrate">0%</div>
-        </div>
-        <div>
-            <div class="text-xs text-gray-500 uppercase tracking-wider">Trades</div>
-            <div class="text-xl font-bold font-mono mt-1" id="paper-trades-count">0</div>
-        </div>
-        <div>
-            <div class="text-xs text-gray-500 uppercase tracking-wider">Drawdown</div>
-            <div class="text-xl font-bold font-mono mt-1" id="paper-drawdown">0%</div>
-        </div>
-    </div>
-
-    <!-- Paper trade log -->
-    <div class="trade-log space-y-1 font-mono text-xs" id="paper-trade-log" style="max-height:200px">
-        <div class="text-gray-600 py-4 text-center">No paper trades yet</div>
+    <div style="height: 280px;">
+        <canvas id="pnl-chart"></canvas>
     </div>
 </div>
 
-<!-- ════════════════════════ LIVE TRADE LOG ════════════════════════ -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <div class="card card-glow rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Live Trade Log</h2>
-        <div class="trade-log space-y-1 font-mono text-xs" id="trade-log">
-            <div class="text-gray-600 py-8 text-center">Waiting for trades…</div>
+<!-- ══════════════════════════ STRATEGY PERFORMANCE ══════════════════════════ -->
+<div>
+    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Strategy Performance</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="strategy-cards"></div>
+</div>
+
+<!-- ══════════════════════════ MARKET SELECTOR ══════════════════════════ -->
+<div class="card p-5">
+    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Markets</h2>
+    <div class="flex flex-wrap gap-2" id="market-chips"></div>
+</div>
+
+<!-- ══════════════════════════ LIVE TRADE FEED ══════════════════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <!-- Live scrolling log -->
+    <div class="card p-5">
+        <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Live Trade Feed</h2>
+        <div class="custom-scroll space-y-1 font-mono text-xs" id="trade-log" style="max-height:360px;overflow-y:auto;">
+            <div class="text-gray-600 py-8 text-center text-sm">Waiting for trades…</div>
         </div>
     </div>
-
-    <!-- Recent Trades Table -->
-    <div class="card card-glow rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Recent Trades</h2>
-            <select id="trade-filter" onchange="loadTrades()" class="text-xs bg-navy-800 border border-navy-700 rounded px-2 py-1 text-gray-300 focus:outline-none focus:border-accent">
+    
+    <!-- Recent trades table -->
+    <div class="card p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest">Recent Trades</h2>
+            <select id="trade-filter" onchange="loadTrades()" class="text-xs bg-base border border-border rounded-lg px-3 py-1.5 text-gray-400 focus:outline-none focus:border-info">
                 <option value="all">All</option>
                 <option value="pending">Pending</option>
                 <option value="settled">Settled</option>
             </select>
         </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-xs">
+        <div class="overflow-x-auto custom-scroll">
+            <table class="w-full text-[11px]">
                 <thead>
-                    <tr class="text-gray-500 border-b border-navy-700/60">
-                        <th class="text-left py-2 font-medium">Time</th>
-                        <th class="text-left py-2 font-medium">Market</th>
-                        <th class="text-left py-2 font-medium">Strat</th>
-                        <th class="text-left py-2 font-medium">Dir</th>
-                        <th class="text-right py-2 font-medium">Amt</th>
-                        <th class="text-right py-2 font-medium">Price</th>
-                        <th class="text-center py-2 font-medium">Result</th>
-                        <th class="text-right py-2 font-medium">P&L</th>
+                    <tr class="text-gray-500 border-b border-border">
+                        <th class="text-left py-2.5 font-semibold">Time</th>
+                        <th class="text-left py-2.5 font-semibold">Market</th>
+                        <th class="text-left py-2.5 font-semibold">Strategy</th>
+                        <th class="text-left py-2.5 font-semibold">Side</th>
+                        <th class="text-right py-2.5 font-semibold">Price</th>
+                        <th class="text-center py-2.5 font-semibold">Result</th>
+                        <th class="text-right py-2.5 font-semibold">P&L</th>
                     </tr>
                 </thead>
-                <tbody id="trades-table" class="divide-y divide-navy-700/40">
-                    <tr><td colspan="8" class="text-center py-8 text-gray-600">No trades yet</td></tr>
+                <tbody id="trades-table" class="divide-y divide-border/40">
+                    <tr><td colspan="7" class="text-center py-8 text-gray-600">No trades yet</td></tr>
                 </tbody>
             </table>
         </div>
-        <div class="flex items-center justify-between mt-3" id="pagination">
+        <div class="flex items-center justify-between mt-3">
             <button onclick="prevPage()" class="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30" id="prev-btn" disabled>← Prev</button>
-            <span class="text-xs text-gray-600" id="page-info">Page 1</span>
+            <span class="text-[10px] text-gray-600" id="page-info">Page 1</span>
             <button onclick="nextPage()" class="text-xs text-gray-500 hover:text-gray-300 disabled:opacity-30" id="next-btn" disabled>Next →</button>
         </div>
     </div>
 </div>
 
+<!-- ══════════════════════════ PAPER TRADING ══════════════════════════ -->
+<div class="paper-section rounded-xl p-6">
+    <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center gap-3">
+            <span class="text-[10px] font-black px-3 py-1 rounded-md bg-purple/20 text-purple border border-purple/30 uppercase tracking-widest">Paper Mode</span>
+            <h2 class="text-sm font-bold text-gray-300">Paper Trading</h2>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="exportPaperTrades()" class="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 transition text-gray-400">Export</button>
+            <button onclick="resetPaper()" class="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 transition text-gray-400">Reset</button>
+            <button id="paper-toggle-btn" onclick="togglePaper()" class="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 bg-purple hover:brightness-110 text-white">
+                Start Paper
+            </button>
+        </div>
+    </div>
+    
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-5">
+        <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Virtual Bankroll</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-bankroll">$1,000.00</div>
+        </div>
+        <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Virtual P&L</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-pnl">$0.00</div>
+        </div>
+        <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Win Rate</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-winrate">0%</div>
+        </div>
+        <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Trades</div>
+            <div class="text-xl font-bold font-mono mt-1" id="paper-trades-count">0</div>
+        </div>
+        <div>
+            <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Drawdown</div>
+            <div class="text-xl font-bold font-mono mt-1 text-loss" id="paper-drawdown">0%</div>
+        </div>
+    </div>
+    
+    <!-- Paper mini chart -->
+    <div style="height:120px;" class="mb-4">
+        <canvas id="paper-chart"></canvas>
+    </div>
+    
+    <div class="custom-scroll space-y-1 font-mono text-xs" id="paper-trade-log" style="max-height:160px;overflow-y:auto;">
+        <div class="text-gray-600 py-4 text-center">No paper trades yet</div>
+    </div>
+</div>
+
 </main>
 
-<!-- ════════════════════════ SETTINGS MODAL ════════════════════════ -->
+<!-- ══════════════════════════ SETTINGS MODAL ══════════════════════════ -->
 <div id="settings-modal" class="fixed inset-0 z-[100] hidden">
-    <div class="modal-bg absolute inset-0" onclick="closeSettings()"></div>
+    <div class="modal-overlay absolute inset-0" onclick="closeSettings()"></div>
     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg">
-        <div class="card card-glow rounded-2xl p-6 m-4 space-y-5">
+        <div class="card p-6 m-4 space-y-6 shadow-2xl">
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-bold">Settings</h2>
-                <button onclick="closeSettings()" class="text-gray-500 hover:text-gray-300 text-xl leading-none">&times;</button>
+                <button onclick="closeSettings()" class="w-8 h-8 rounded-lg hover:bg-white/5 flex items-center justify-center text-gray-500 hover:text-gray-300 transition">&times;</button>
             </div>
-            <div class="grid grid-cols-2 gap-4 text-sm" id="settings-fields">
-                <!-- Rendered by JS -->
-            </div>
-            <div class="flex justify-end gap-3">
-                <button onclick="closeSettings()" class="px-4 py-2 text-sm rounded-lg bg-navy-700 hover:bg-navy-600 transition">Cancel</button>
-                <button onclick="saveSettings()" class="px-4 py-2 text-sm rounded-lg bg-accent hover:bg-indigo-500 font-semibold transition">Save</button>
+            <div class="grid grid-cols-2 gap-4 text-sm" id="settings-fields"></div>
+            <div class="flex justify-end gap-3 pt-2 border-t border-border">
+                <button onclick="closeSettings()" class="px-4 py-2 text-sm rounded-lg bg-white/5 hover:bg-white/10 transition font-medium">Cancel</button>
+                <button onclick="saveSettings()" class="px-5 py-2 text-sm rounded-lg bg-info hover:brightness-110 font-bold transition text-white">Save Changes</button>
             </div>
         </div>
     </div>
@@ -256,19 +368,144 @@
 
 <script>
 // ═══════════════════════════ STATE ═══════════════════════════
-let ws = null;
-let state = {};
-let tradeLog = [];
-let currentPage = 0;
+let ws = null, state = {}, tradeLog = [], currentPage = 0, totalTrades = 0, botRunning = false, paperRunning = false;
+let pnlChart = null, paperChart = null, chartRange = '24h';
+let reconnectDelay = 1000;
 const PAGE_SIZE = 20;
-let totalTrades = 0;
-let botRunning = false;
 
-const STRATEGY_META = {
-    arbitrage: { icon: '⚡', label: 'Arbitrage', color: 'indigo' },
-    streak:    { icon: '📈', label: 'Streak Reversal', color: 'cyan' },
-    copytrade: { icon: '📋', label: 'Copytrade', color: 'purple' },
+const STRAT_META = {
+    arbitrage: { icon: '⚡', label: 'Latency Arb', accent: '#3b82f6' },
+    streak:    { icon: '📈', label: 'Streak Reversal', accent: '#10b981' },
+    copytrade: { icon: '📋', label: 'Copytrade', accent: '#8b5cf6' },
+    spread_farmer: { icon: '🌾', label: 'Spread Farmer', accent: '#f59e0b' },
 };
+
+// ═══════════════════════════ CLOCK ═══════════════════════════
+function updateClock() {
+    const now = new Date();
+    document.getElementById('live-clock').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ═══════════════════════════ CHART INIT ═══════════════════════════
+function initCharts() {
+    const ctx = document.getElementById('pnl-chart').getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+    gradient.addColorStop(0, 'rgba(16, 185, 129, 0.15)');
+    gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+    
+    pnlChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                borderColor: '#10b981',
+                backgroundColor: gradient,
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHitRadius: 8,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 800, easing: 'easeOutQuart' },
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    titleColor: '#9ca3af',
+                    bodyColor: '#e5e7eb',
+                    borderColor: '#374151',
+                    borderWidth: 1,
+                    padding: 10,
+                    titleFont: { family: 'Inter', size: 11 },
+                    bodyFont: { family: 'JetBrains Mono', size: 12, weight: 'bold' },
+                    callbacks: {
+                        label: (ctx) => (ctx.parsed.y >= 0 ? '+' : '') + '$' + ctx.parsed.y.toFixed(2)
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(30,41,59,0.5)', drawBorder: false },
+                    ticks: { color: '#4b5563', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 },
+                    border: { display: false }
+                },
+                y: {
+                    grid: { color: 'rgba(30,41,59,0.5)', drawBorder: false },
+                    ticks: { color: '#4b5563', font: { family: 'JetBrains Mono', size: 10 }, callback: v => '$' + v.toFixed(2) },
+                    border: { display: false }
+                }
+            }
+        }
+    });
+    
+    // Paper mini chart
+    const pctx = document.getElementById('paper-chart').getContext('2d');
+    const pgradient = pctx.createLinearGradient(0, 0, 0, 120);
+    pgradient.addColorStop(0, 'rgba(139, 92, 246, 0.15)');
+    pgradient.addColorStop(1, 'rgba(139, 92, 246, 0)');
+    
+    paperChart = new Chart(pctx, {
+        type: 'line',
+        data: { labels: [], datasets: [{ data: [], borderColor: '#8b5cf6', backgroundColor: pgradient, borderWidth: 1.5, fill: true, tension: 0.4, pointRadius: 0 }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { duration: 600 },
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: {
+                x: { display: false },
+                y: { display: false }
+            }
+        }
+    });
+}
+
+function setChartRange(range) {
+    chartRange = range;
+    document.querySelectorAll('.time-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.range === range);
+        b.classList.toggle('inactive', b.dataset.range !== range);
+    });
+    loadPnlHistory();
+}
+
+async function loadPnlHistory() {
+    try {
+        const res = await fetch(`/api/pnl-history?range=${chartRange}`);
+        const data = await res.json();
+        if (pnlChart && data.points) {
+            pnlChart.data.labels = data.points.map(p => p.time);
+            pnlChart.data.datasets[0].data = data.points.map(p => p.pnl);
+            
+            // Update gradient color based on final P&L
+            const lastPnl = data.points.length > 0 ? data.points[data.points.length - 1].pnl : 0;
+            const ctx = pnlChart.ctx;
+            const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+            if (lastPnl >= 0) {
+                pnlChart.data.datasets[0].borderColor = '#10b981';
+                gradient.addColorStop(0, 'rgba(16, 185, 129, 0.15)');
+                gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+            } else {
+                pnlChart.data.datasets[0].borderColor = '#ef4444';
+                gradient.addColorStop(0, 'rgba(239, 68, 68, 0.15)');
+                gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            }
+            pnlChart.data.datasets[0].backgroundColor = gradient;
+            pnlChart.update();
+            
+            const el = document.getElementById('chart-pnl-value');
+            el.textContent = pnlSign(lastPnl);
+            el.className = `text-2xl font-bold font-mono mt-1 ${lastPnl >= 0 ? 'text-profit glow-green' : 'text-loss glow-red'}`;
+        }
+    } catch (e) {}
+}
 
 // ═══════════════════════════ WEBSOCKET ═══════════════════════════
 function connectWS() {
@@ -276,23 +513,40 @@ function connectWS() {
     ws = new WebSocket(`${proto}://${location.host}/ws`);
 
     ws.onopen = () => {
-        document.getElementById('ws-indicator').className = 'w-2 h-2 rounded-full bg-emerald-400';
+        reconnectDelay = 1000;
+        document.getElementById('ws-dot').className = 'w-2 h-2 rounded-full bg-profit pulse-green';
         document.getElementById('ws-text').textContent = 'Connected';
+        document.getElementById('ws-text').className = 'text-[11px] text-profit font-medium';
     };
 
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'status') updateDashboard(msg.data);
         if (msg.type === 'trade') addTradeLog(msg.data);
+        if (msg.type === 'pnl_update') updateChartPoint(msg.data);
     };
 
     ws.onclose = () => {
-        document.getElementById('ws-indicator').className = 'w-2 h-2 rounded-full bg-red-500';
+        document.getElementById('ws-dot').className = 'w-2 h-2 rounded-full bg-loss pulse-red';
         document.getElementById('ws-text').textContent = 'Disconnected';
-        setTimeout(connectWS, 2000);
+        document.getElementById('ws-text').className = 'text-[11px] text-loss font-medium';
+        setTimeout(connectWS, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     };
 
     ws.onerror = () => ws.close();
+}
+
+function updateChartPoint(data) {
+    if (pnlChart && data.time && data.pnl !== undefined) {
+        pnlChart.data.labels.push(data.time);
+        pnlChart.data.datasets[0].data.push(data.pnl);
+        if (pnlChart.data.labels.length > 200) {
+            pnlChart.data.labels.shift();
+            pnlChart.data.datasets[0].data.shift();
+        }
+        pnlChart.update('none');
+    }
 }
 
 // ═══════════════════════════ DASHBOARD UPDATE ═══════════════════════════
@@ -303,109 +557,112 @@ function updateDashboard(d) {
     // Mode badge
     const mb = document.getElementById('mode-badge');
     mb.textContent = d.mode;
-    mb.className = d.mode === 'LIVE'
-        ? 'text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-400 uppercase tracking-wider'
-        : 'text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 uppercase tracking-wider';
+    if (d.mode === 'LIVE') {
+        mb.className = 'text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-widest bg-loss/15 text-loss border border-loss/20';
+    } else {
+        mb.className = 'text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-widest bg-yellow-500/15 text-yellow-400 border border-yellow-500/20';
+    }
 
     // Bot status
     const dot = document.getElementById('status-dot');
     const stxt = document.getElementById('status-text');
     const btn = document.getElementById('bot-toggle-btn');
     if (d.running) {
-        dot.className = 'w-3 h-3 rounded-full bg-emerald-400 pulse-green';
-        stxt.textContent = 'Running';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-profit pulse-green';
+        stxt.textContent = 'Running'; stxt.className = 'text-xs font-semibold text-profit';
         btn.textContent = 'Stop Bot';
-        btn.className = 'px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/30';
+        btn.className = 'px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 bg-loss hover:brightness-110 text-white shadow-lg shadow-loss/20';
     } else {
-        dot.className = 'w-3 h-3 rounded-full bg-red-500';
-        stxt.textContent = 'Stopped';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-loss';
+        stxt.textContent = 'Stopped'; stxt.className = 'text-xs font-semibold text-gray-400';
         btn.textContent = 'Start Bot';
-        btn.className = 'px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/30';
+        btn.className = 'px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 bg-profit hover:brightness-110 text-white shadow-lg shadow-profit/20';
     }
 
     // Stats
-    setText('bankroll', '$' + num(d.bankroll));
-    colorPnl('total-pnl', d.total_pnl);
-    setText('win-rate', num(d.win_rate, 1) + '%');
-    setText('win-loss', `${d.wins || 0}W / ${d.losses || 0}L`);
-    colorPnl('daily-pnl', d.daily_pnl);
-    setText('daily-bets', `${d.daily_bets || 0} bets today`);
-    setText('pending-trades', d.pending_trades || 0);
-    setText('total-trades', `${d.total_trades || 0} total trades`);
+    document.getElementById('bankroll').textContent = '$' + num(d.bankroll);
+    
+    const dpnl = document.getElementById('daily-pnl');
+    dpnl.textContent = pnlSign(d.daily_pnl);
+    dpnl.className = `text-3xl font-bold font-mono num-animate ${d.daily_pnl >= 0 ? 'text-profit glow-green' : 'text-loss glow-red'}`;
+    
+    const pctChange = d.bankroll > 0 ? ((d.daily_pnl / (d.bankroll - d.daily_pnl)) * 100) : 0;
+    const dpctEl = document.getElementById('daily-pnl-pct');
+    dpctEl.textContent = (pctChange >= 0 ? '+' : '') + pctChange.toFixed(2) + '%';
+    dpctEl.className = `text-xs mt-2 font-mono font-semibold ${pctChange >= 0 ? 'text-profit' : 'text-loss'}`;
+    
+    // Win rate ring
+    const wr = d.win_rate || 0;
+    document.getElementById('win-rate').textContent = num(wr, 1) + '%';
+    const circumference = 2 * Math.PI * 30;
+    document.getElementById('win-ring').setAttribute('stroke-dasharray', `${(wr / 100) * circumference} ${circumference}`);
+    document.getElementById('wins').textContent = d.wins || 0;
+    document.getElementById('losses').textContent = d.losses || 0;
+    
+    document.getElementById('pending-trades').textContent = d.pending_trades || 0;
+    document.getElementById('total-trades').textContent = d.total_trades || 0;
+    document.getElementById('daily-bets-label').textContent = (d.daily_bets || 0) + ' today';
 
-    // Uptime
-    const secs = Math.floor(d.uptime_seconds || 0);
-    const hh = String(Math.floor(secs/3600)).padStart(2,'0');
-    const mm = String(Math.floor((secs%3600)/60)).padStart(2,'0');
-    const ss = String(secs%60).padStart(2,'0');
-    setText('uptime', `${hh}:${mm}:${ss}`);
-
-    // Strategies
     renderStrategies(d.strategies || {});
-
-    // Markets
     renderMarkets(d.all_markets || {});
-
-    // Paper trading
     updatePaperSection(d.paper_trading);
 }
 
 function renderStrategies(strats) {
     const container = document.getElementById('strategy-cards');
-    container.innerHTML = '';
+    let html = '';
     for (const [key, data] of Object.entries(strats)) {
-        const meta = STRATEGY_META[key] || { icon: '●', label: key, color: 'gray' };
-        const wr = data.trades > 0 ? ((data.wins / (data.wins + data.losses || 1)) * 100) : 0;
-        const pnlColor = data.pnl >= 0 ? 'text-emerald-400' : 'text-red-400';
-        const enabled = data.enabled;
-
-        container.innerHTML += `
-        <div class="card card-glow rounded-xl p-4 fade-in">
-            <div class="flex items-center justify-between mb-3">
+        const meta = STRAT_META[key] || { icon: '●', label: key, accent: '#6b7280' };
+        const wr = data.trades > 0 ? ((data.wins / Math.max(data.wins + data.losses, 1)) * 100) : 0;
+        const pnlColor = data.pnl >= 0 ? 'text-profit' : 'text-loss';
+        const pnlGlow = data.pnl >= 0 ? 'glow-green' : data.pnl < 0 ? 'glow-red' : '';
+        
+        html += `
+        <div class="card strat-card p-5 fade-in">
+            <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-2">
                     <span class="text-lg">${meta.icon}</span>
-                    <span class="text-sm font-semibold">${meta.label}</span>
+                    <span class="text-sm font-bold">${meta.label}</span>
                 </div>
-                <div class="toggle-track ${enabled ? 'on' : 'off'}" onclick="toggleStrategy('${key}', ${!enabled})">
-                    <div class="toggle-thumb"></div>
-                </div>
+                <div class="toggle ${data.enabled ? 'on' : 'off'}" onclick="toggleStrategy('${key}', ${!data.enabled})"></div>
             </div>
-            <div class="space-y-2 text-xs">
-                <div class="flex justify-between"><span class="text-gray-500">P&L</span><span class="font-mono font-semibold ${pnlColor}">${pnlSign(data.pnl)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">Trades</span><span class="font-mono">${data.trades}</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">Win Rate</span><span class="font-mono">${num(wr,1)}%</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">W / L</span><span class="font-mono">${data.wins} / ${data.losses}</span></div>
+            <div class="text-2xl font-bold font-mono ${pnlColor} ${pnlGlow} mb-4">${pnlSign(data.pnl)}</div>
+            <div class="space-y-2.5">
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-500">Win Rate</span>
+                    <div class="flex items-center gap-2">
+                        <div class="w-20 h-1.5 rounded-full bg-border overflow-hidden">
+                            <div class="h-full rounded-full bg-profit transition-all duration-500" style="width:${wr}%"></div>
+                        </div>
+                        <span class="font-mono font-semibold text-gray-300 w-10 text-right">${num(wr,0)}%</span>
+                    </div>
+                </div>
+                <div class="flex justify-between text-xs">
+                    <span class="text-gray-500">Trades</span>
+                    <span class="font-mono font-semibold text-gray-300">${data.trades}</span>
+                </div>
+                <div class="flex justify-between text-xs">
+                    <span class="text-gray-500">W / L</span>
+                    <span class="font-mono"><span class="text-profit">${data.wins}</span> / <span class="text-loss">${data.losses}</span></span>
+                </div>
             </div>
         </div>`;
     }
+    container.innerHTML = html;
 }
 
 function renderMarkets(markets) {
-    const grid = document.getElementById('market-grid');
-    // Group by asset
-    const assets = {};
-    for (const [id, m] of Object.entries(markets)) {
-        const asset = id.split('-')[0].toUpperCase();
-        if (!assets[asset]) assets[asset] = [];
-        assets[asset].push({ id, ...m });
-    }
-
+    const container = document.getElementById('market-chips');
     let html = '';
-    for (const [asset, items] of Object.entries(assets)) {
-        html += `<div class="mb-3"><div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">${asset}</div>`;
-        for (const m of items) {
-            const interval = m.id.includes('5m') ? '5m' : '15m';
-            html += `
-            <label class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-navy-700/40 cursor-pointer transition">
-                <span class="text-sm">${asset} ${interval}</span>
-                <div class="toggle-track ${m.enabled ? 'on' : 'off'}" onclick="event.preventDefault();toggleMarket('${m.id}', ${!m.enabled})">
-                    <div class="toggle-thumb"></div>
-                </div>
-            </label>`;
-        }
-        html += '</div>';
+    for (const [id, m] of Object.entries(markets)) {
+        const parts = id.split('-');
+        const asset = parts[0].toUpperCase();
+        const interval = id.includes('5m') ? '5m' : '15m';
+        const label = `${asset} ${interval}`;
+        const cls = m.enabled ? 'active' : 'inactive';
+        html += `<button class="chip ${cls}" onclick="toggleMarket('${id}', ${!m.enabled})">${label}</button>`;
     }
-    grid.innerHTML = html;
+    container.innerHTML = html;
 }
 
 // ═══════════════════════════ TRADE LOG ═══════════════════════════
@@ -415,13 +672,14 @@ function addTradeLog(t) {
 
     const isWin = t.won === true;
     const isLoss = t.won === false && t.outcome && t.outcome !== 'PENDING';
-    const color = isWin ? 'text-emerald-400' : isLoss ? 'text-red-400' : 'text-yellow-400';
+    const rowClass = isWin ? 'trade-row-win' : isLoss ? 'trade-row-loss' : 'trade-row-pending';
+    const color = isWin ? 'text-profit' : isLoss ? 'text-loss' : 'text-warn';
     const icon = isWin ? '✓' : isLoss ? '✗' : '◌';
     const time = t.timestamp ? t.timestamp.split(' ')[1] : '';
 
     const line = document.createElement('div');
-    line.className = `${color} py-0.5 fade-in`;
-    line.textContent = `${time} ${icon} [${t.strategy}] ${t.direction} $${num(t.amount)} @ ${num(t.price,4)} → ${t.outcome} ${pnlSign(t.pnl)}`;
+    line.className = `${rowClass} ${color} py-1.5 px-3 rounded fade-in bg-white/[0.02]`;
+    line.innerHTML = `<span class="text-gray-500">${time}</span> ${icon} <span class="text-gray-400">[${t.strategy}]</span> <span class="${t.direction === 'UP' ? 'text-profit' : 'text-loss'}">${t.direction}</span> <span class="text-gray-300">$${num(t.amount)}</span> @ <span class="text-gray-300">${num(t.price,4)}</span> → <span class="font-semibold">${pnlSign(t.pnl)}</span>`;
     log.prepend(line);
 
     tradeLog.unshift(t);
@@ -440,33 +698,30 @@ async function loadTrades() {
 
     const tbody = document.getElementById('trades-table');
     if (!data.trades || data.trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-600">No trades</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-600">No trades</td></tr>';
     } else {
         tbody.innerHTML = data.trades.map(t => {
             const badge = t.status === 'pending'
-                ? '<span class="px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400">Pending</span>'
+                ? '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-warn/10 text-warn">PENDING</span>'
                 : t.won
-                    ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">Won</span>'
-                    : '<span class="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">Lost</span>';
-            const pc = t.pnl > 0 ? 'text-emerald-400' : t.pnl < 0 ? 'text-red-400' : 'text-gray-500';
-            return `<tr class="hover:bg-navy-800/50 transition">
-                <td class="py-2 text-gray-400">${t.timestamp.split(' ')[1]}</td>
-                <td class="py-2">${t.market}</td>
-                <td class="py-2"><span class="px-1.5 py-0.5 rounded bg-navy-700/80 text-gray-300">${t.strategy}</span></td>
-                <td class="py-2 font-semibold ${t.direction === 'UP' ? 'text-emerald-400' : 'text-red-400'}">${t.direction}</td>
-                <td class="py-2 text-right font-mono">$${num(t.amount)}</td>
-                <td class="py-2 text-right font-mono">${num(t.price, 4)}</td>
+                    ? '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-profit/10 text-profit">WON</span>'
+                    : '<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-loss/10 text-loss">LOST</span>';
+            const pc = t.pnl > 0 ? 'text-profit font-semibold' : t.pnl < 0 ? 'text-loss font-semibold' : 'text-gray-500';
+            return `<tr class="hover:bg-white/[0.02] transition">
+                <td class="py-2 text-gray-500 font-mono">${t.timestamp.split(' ')[1]}</td>
+                <td class="py-2 text-gray-300">${t.market}</td>
+                <td class="py-2"><span class="px-2 py-0.5 rounded bg-white/5 text-gray-400 text-[10px] font-semibold">${t.strategy}</span></td>
+                <td class="py-2 font-bold ${t.direction === 'UP' ? 'text-profit' : 'text-loss'}">${t.direction}</td>
+                <td class="py-2 text-right font-mono text-gray-300">${num(t.price, 4)}</td>
                 <td class="py-2 text-center">${badge}</td>
-                <td class="py-2 text-right font-mono font-semibold ${pc}">${pnlSign(t.pnl)}</td>
+                <td class="py-2 text-right font-mono ${pc}">${pnlSign(t.pnl)}</td>
             </tr>`;
         }).join('');
     }
 
-    // Pagination
     document.getElementById('prev-btn').disabled = currentPage === 0;
     document.getElementById('next-btn').disabled = (currentPage + 1) * PAGE_SIZE >= totalTrades;
-    const maxPage = Math.max(1, Math.ceil(totalTrades / PAGE_SIZE));
-    document.getElementById('page-info').textContent = `Page ${currentPage + 1} of ${maxPage}`;
+    document.getElementById('page-info').textContent = `Page ${currentPage + 1} of ${Math.max(1, Math.ceil(totalTrades / PAGE_SIZE))}`;
 }
 
 function prevPage() { if (currentPage > 0) { currentPage--; loadTrades(); } }
@@ -481,13 +736,72 @@ async function toggleBot() {
 }
 
 async function toggleStrategy(name, enable) {
-    const action = enable ? 'enable' : 'disable';
-    await fetch(`/api/strategy/${name}/${action}`, { method: 'POST' });
+    await fetch(`/api/strategy/${name}/${enable ? 'enable' : 'disable'}`, { method: 'POST' });
 }
 
 async function toggleMarket(id, enable) {
-    const action = enable ? 'enable' : 'disable';
-    await fetch(`/api/market/${id}/${action}`, { method: 'POST' });
+    await fetch(`/api/market/${id}/${enable ? 'enable' : 'disable'}`, { method: 'POST' });
+}
+
+// ═══════════════════════════ PAPER TRADING ═══════════════════════════
+function updatePaperSection(pt) {
+    if (!pt) return;
+    paperRunning = pt.running;
+    const stats = pt.stats || {};
+
+    const btn = document.getElementById('paper-toggle-btn');
+    if (pt.running) {
+        btn.textContent = 'Stop Paper';
+        btn.className = 'px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 bg-loss hover:brightness-110 text-white';
+    } else {
+        btn.textContent = 'Start Paper';
+        btn.className = 'px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 bg-purple hover:brightness-110 text-white';
+    }
+
+    document.getElementById('paper-bankroll').textContent = '$' + num(stats.bankroll || 0);
+    const pnlEl = document.getElementById('paper-pnl');
+    const pv = stats.total_pnl || 0;
+    pnlEl.textContent = pnlSign(pv);
+    pnlEl.className = `text-xl font-bold font-mono mt-1 ${pv > 0 ? 'text-profit glow-green' : pv < 0 ? 'text-loss glow-red' : 'text-gray-400'}`;
+    document.getElementById('paper-winrate').textContent = num(stats.win_rate || 0, 1) + '%';
+    document.getElementById('paper-trades-count').textContent = stats.total_trades || 0;
+    document.getElementById('paper-drawdown').textContent = num(stats.drawdown_pct || 0, 1) + '%';
+}
+
+async function togglePaper() {
+    const url = paperRunning ? '/api/paper/stop' : '/api/paper/start';
+    const res = await fetch(url, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) alert(data.error);
+    loadPaperTrades();
+}
+
+async function loadPaperTrades() {
+    try {
+        const res = await fetch('/api/paper/trades?limit=30');
+        const data = await res.json();
+        const log = document.getElementById('paper-trade-log');
+        if (!data.trades || data.trades.length === 0) {
+            log.innerHTML = '<div class="text-gray-600 py-4 text-center">No paper trades yet</div>';
+            return;
+        }
+        log.innerHTML = data.trades.map(t => {
+            const isWin = t.won === true;
+            const isLoss = t.won === false && t.outcome !== 'PENDING';
+            const color = isWin ? 'text-profit' : isLoss ? 'text-loss' : 'text-warn';
+            const icon = isWin ? '✓' : isLoss ? '✗' : '◌';
+            const time = t.timestamp ? t.timestamp.split(' ')[1] : '';
+            return `<div class="${color} py-0.5">${time} ${icon} [${t.strategy}] ${t.direction} $${num(t.amount)} @ ${num(t.price,4)} → ${pnlSign(t.pnl)}</div>`;
+        }).join('');
+    } catch (e) {}
+}
+
+function exportPaperTrades() { window.open('/api/paper/export', '_blank'); }
+
+async function resetPaper() {
+    if (!confirm('Reset paper trading? This clears all paper trades and resets bankroll.')) return;
+    await fetch('/api/paper/reset', { method: 'POST' });
+    loadPaperTrades();
 }
 
 // ═══════════════════════════ SETTINGS ═══════════════════════════
@@ -505,144 +819,52 @@ const SETTINGS_FIELDS = [
     { key: 'arb_min_edge_pct', label: 'Arb Min Edge %', type: 'number', step: 0.1 },
 ];
 
-let settingsCache = {};
-
 async function openSettings() {
     const res = await fetch('/api/settings');
-    settingsCache = await res.json();
-
+    const settings = await res.json();
     const container = document.getElementById('settings-fields');
     container.innerHTML = SETTINGS_FIELDS.map(f => {
-        const val = settingsCache[f.key];
+        const val = settings[f.key];
         if (f.type === 'bool') {
-            const checked = val ? 'checked' : '';
-            return `<label class="col-span-2 flex items-center justify-between">
-                <span class="text-gray-300">${f.label}</span>
-                <input type="checkbox" data-key="${f.key}" ${checked} class="w-4 h-4 accent-indigo-500">
+            return `<label class="col-span-2 flex items-center justify-between py-2">
+                <span class="text-gray-300 font-medium">${f.label}</span>
+                <div class="toggle ${val ? 'on' : 'off'}" data-key="${f.key}" onclick="this.classList.toggle('on');this.classList.toggle('off')"></div>
             </label>`;
         }
         return `<div>
-            <label class="text-gray-500 text-xs">${f.label}</label>
+            <label class="text-gray-500 text-[11px] font-semibold uppercase tracking-wider">${f.label}</label>
             <input type="number" data-key="${f.key}" value="${val}" step="${f.step||1}"
-                class="w-full mt-1 px-3 py-1.5 bg-navy-800 border border-navy-700 rounded text-sm font-mono text-gray-200 focus:outline-none focus:border-accent">
+                class="w-full mt-1.5 px-3 py-2 bg-base border border-border rounded-lg text-sm font-mono text-gray-200 focus:outline-none focus:border-info transition">
         </div>`;
     }).join('');
-
     document.getElementById('settings-modal').classList.remove('hidden');
 }
 
-function closeSettings() {
-    document.getElementById('settings-modal').classList.add('hidden');
-}
+function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
 
 async function saveSettings() {
     const payload = {};
     document.querySelectorAll('#settings-fields [data-key]').forEach(el => {
         const key = el.dataset.key;
-        if (el.type === 'checkbox') payload[key] = el.checked;
+        if (el.classList.contains('toggle')) payload[key] = el.classList.contains('on');
         else payload[key] = parseFloat(el.value);
     });
-    await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    });
+    await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     closeSettings();
 }
 
-// ═══════════════════════════ PAPER TRADING ═══════════════════════════
-let paperRunning = false;
-
-function updatePaperSection(pt) {
-    if (!pt) return;
-    paperRunning = pt.running;
-    const stats = pt.stats || {};
-
-    // Banner
-    const banner = document.getElementById('paper-banner');
-    if (pt.running) {
-        banner.classList.remove('hidden');
-    } else {
-        banner.classList.add('hidden');
-    }
-
-    // Toggle button
-    const btn = document.getElementById('paper-toggle-btn');
-    if (pt.running) {
-        btn.textContent = 'Stop Paper';
-        btn.style.background = '#dc2626';
-    } else {
-        btn.textContent = 'Start Paper';
-        btn.style.background = '#7c3aed';
-    }
-
-    // Stats
-    setText('paper-bankroll', '$' + num(stats.bankroll || 0));
-    const pnlEl = document.getElementById('paper-pnl');
-    const pnlVal = stats.total_pnl || 0;
-    pnlEl.textContent = pnlSign(pnlVal);
-    pnlEl.className = pnlVal > 0 ? 'text-xl font-bold font-mono mt-1 text-emerald-400' : pnlVal < 0 ? 'text-xl font-bold font-mono mt-1 text-red-400' : 'text-xl font-bold font-mono mt-1 text-gray-400';
-    setText('paper-winrate', num(stats.win_rate || 0, 1) + '%');
-    setText('paper-trades-count', stats.total_trades || 0);
-    setText('paper-drawdown', num(stats.drawdown_pct || 0, 1) + '%');
-}
-
-async function togglePaper() {
-    const url = paperRunning ? '/api/paper/stop' : '/api/paper/start';
-    const res = await fetch(url, { method: 'POST' });
-    const data = await res.json();
-    if (data.error) alert(data.error);
-    // Refresh paper trades
-    loadPaperTrades();
-}
-
-async function loadPaperTrades() {
-    try {
-        const res = await fetch('/api/paper/trades?limit=30');
-        const data = await res.json();
-        const log = document.getElementById('paper-trade-log');
-        if (!data.trades || data.trades.length === 0) {
-            log.innerHTML = '<div class="text-gray-600 py-4 text-center">No paper trades yet</div>';
-            return;
-        }
-        log.innerHTML = data.trades.map(t => {
-            const isWin = t.won === true;
-            const isLoss = t.won === false && t.outcome !== 'PENDING';
-            const color = isWin ? 'text-emerald-400' : isLoss ? 'text-red-400' : 'text-yellow-400';
-            const icon = isWin ? '✓' : isLoss ? '✗' : '◌';
-            const time = t.timestamp ? t.timestamp.split(' ')[1] : '';
-            return `<div class="${color} py-0.5">${time} ${icon} [${t.strategy}] ${t.direction} $${num(t.amount)} @ ${num(t.price,4)} → ${t.outcome} ${pnlSign(t.pnl)}</div>`;
-        }).join('');
-    } catch (e) {}
-}
-
-function exportPaperTrades() {
-    window.open('/api/paper/export', '_blank');
-}
-
-async function resetPaper() {
-    if (!confirm('Reset paper trading? This will clear all paper trades and reset bankroll.')) return;
-    const res = await fetch('/api/paper/reset', { method: 'POST' });
-    const data = await res.json();
-    if (data.error) alert(data.error);
-    loadPaperTrades();
-}
-
 // ═══════════════════════════ HELPERS ═══════════════════════════
-function setText(id, v) { document.getElementById(id).textContent = v; }
 function num(v, d=2) { return (v || 0).toFixed(d); }
-function pnlSign(v) { v = v || 0; return (v >= 0 ? '+' : '') + '$' + num(Math.abs(v)); }
-function colorPnl(id, v) {
-    const el = document.getElementById(id);
-    el.textContent = pnlSign(v);
-    el.className = v > 0 ? 'font-mono font-semibold text-emerald-400' : v < 0 ? 'font-mono font-semibold text-red-400' : 'font-mono font-semibold text-gray-400';
-}
+function pnlSign(v) { v = v || 0; return (v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2); }
 
 // ═══════════════════════════ INIT ═══════════════════════════
+initCharts();
 connectWS();
 loadTrades();
 loadPaperTrades();
+loadPnlHistory();
 setInterval(loadPaperTrades, 10000);
+setInterval(loadPnlHistory, 30000);
 </script>
 </body>
 </html>

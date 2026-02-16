@@ -188,6 +188,40 @@ async def get_status():
     return JSONResponse(_build_status())
 
 
+@app.get("/api/pnl-history")
+async def get_pnl_history(range: str = Query("24h")):
+    """Return timestamped cumulative P&L data points for charting."""
+    points = []
+    if not bot or not hasattr(bot, 'state') or not bot.state.trades:
+        return JSONResponse({"points": points, "range": range})
+
+    # Determine time window
+    range_seconds = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800}.get(range, 86400)
+    cutoff_ms = (time.time() - range_seconds) * 1000
+
+    cumulative = 0.0
+    for t in bot.state.trades:
+        if t.executed_at < cutoff_ms:
+            cumulative += t.net_pnl
+            continue
+        cumulative += t.net_pnl
+        ts = datetime.fromtimestamp(t.executed_at / 1000, tz=LOCAL_TZ)
+        if range in ("1h", "6h"):
+            label = ts.strftime("%H:%M")
+        elif range == "7d":
+            label = ts.strftime("%m/%d %H:%M")
+        else:
+            label = ts.strftime("%H:%M")
+        points.append({"time": label, "pnl": round(cumulative, 2)})
+
+    # If no points, add a zero point
+    if not points:
+        now = datetime.now(tz=LOCAL_TZ)
+        points.append({"time": now.strftime("%H:%M"), "pnl": 0.0})
+
+    return JSONResponse({"points": points, "range": range})
+
+
 @app.get("/api/stats")
 async def get_stats():
     if not bot:
