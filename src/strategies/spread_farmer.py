@@ -393,7 +393,7 @@ class SpreadFarmer:
                 except Exception:
                     pass
 
-        # Check cycles for completion (only log once per cycle)
+        # Check cycles for completion
         for cycle in self.active_cycles:
             if cycle.both_filled and not cycle.settled and not getattr(cycle, '_logged_full', False):
                 self.stats.full_fills += 1
@@ -401,33 +401,33 @@ class SpreadFarmer:
                 print(f"[SPREAD] 🎯 FULL FILL on {cycle.market_slug}: "
                       f"cost={cycle.total_cost:.4f}, expected_profit=${cycle.expected_profit:.4f}")
             elif cycle.partial_fill and not getattr(cycle, '_logged_partial', False):
-                cycle._logged_partial = True
-                filled_side = "YES" if (cycle.yes_order and cycle.yes_order.filled) else "NO"
-                print(f"[SPREAD] ⚠️ Partial fill ({filled_side}) on {cycle.market_slug}")
+                # One side filled, other didn't — DANGER: naked exposure
+                age = time.time() - cycle.created_at
+                if age > 30:  # 30 second grace period
+                    # Cancel unfilled side to avoid holding naked position
+                    unfilled_side = "NO" if (cycle.yes_order and cycle.yes_order.filled) else "YES"
+                    filled_side = "YES" if unfilled_side == "NO" else "NO"
+                    unfilled_order = cycle.no_order if unfilled_side == "NO" else cycle.yes_order
+                    if unfilled_order and not unfilled_order.cancelled:
+                        await self.cancel_order(unfilled_order.order_id)
+                        cycle._logged_partial = True
+                        print(f"[SPREAD] 🚨 Partial fill timeout on {cycle.market_slug} — "
+                              f"only {filled_side} filled, cancelled {unfilled_side} to avoid naked exposure")
 
     async def _check_paper_fill(self, order: SpreadOrder) -> bool:
         """Simulate fill in paper mode.
         
-        Limit orders 2¢ below mid on a liquid 5-min crypto market fill
-        within seconds. We simulate ~30% chance per check (~1s interval)
-        so both sides fill within ~3-10 seconds on average.
+        Both sides of a spread should fill near-simultaneously on liquid
+        markets. We use high probability so both legs fill within seconds.
         """
         import random
         
         age = time.time() - order.placed_at
         
-        # Time-based fill probability — realistic for near-mid limits
-        # on liquid Polymarket crypto markets
-        if age < 3:
-            return random.random() < 0.30  # 30% in first 3 seconds
-        elif age < 10:
-            return random.random() < 0.40  # 40% up to 10s
+        if age < 2:
+            return random.random() < 0.50  # 50% — fast fill on liquid market
         else:
-            return random.random() < 0.50  # 50% after 10s
-        if age > 120:
-            base_prob = 0.10  # 10% after 2 minutes
-        
-        return random.random() < base_prob
+            return random.random() < 0.70  # 70% — should fill quickly
 
     async def refresh_orders(self):
         """Cancel stale orders and repost at current levels."""
