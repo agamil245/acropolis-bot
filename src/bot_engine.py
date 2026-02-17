@@ -196,21 +196,18 @@ class BotEngine:
         # Print startup info
         Config.print_summary()
 
-        # In live mode, fetch actual USDC balance from wallet
+        # In live mode, fetch actual Polymarket balance
         if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
             try:
-                from src.core.wallet import get_usdc_balance
-                from eth_account import Account
-                address = Account.from_key(Config.PRIVATE_KEY).address
-                balance = get_usdc_balance(address)
+                balance = self._get_polymarket_balance()
                 if balance is not None:
                     self.state.bankroll = balance
                     self.state.peak_bankroll = max(self.state.peak_bankroll, balance)
-                    log(f"💰 Live wallet balance: ${balance:.2f} USDC ({address[:10]}...)")
+                    log(f"💰 Polymarket balance: ${balance:.2f} USDC")
                 else:
-                    log(f"⚠️ Could not fetch wallet balance, using config: ${self.state.bankroll:.2f}")
+                    log(f"⚠️ Could not fetch Polymarket balance, using config: ${self.state.bankroll:.2f}")
             except Exception as e:
-                log(f"⚠️ Wallet balance check failed: {e}")
+                log(f"⚠️ Balance check failed: {e}")
 
         # Save starting bankroll for PnL calculation
         self._starting_bankroll = self.state.bankroll
@@ -227,6 +224,30 @@ class BotEngine:
         self._chainlink_feed = None
         self._chainlink_momentum = None
         log("🔗 Chainlink disabled (using Binance.US for price feeds)")
+
+    def _get_polymarket_balance(self) -> float | None:
+        """Get USDC balance from Polymarket CLOB (deposited funds)."""
+        try:
+            if hasattr(self, 'trader') and hasattr(self.trader, 'client') and self.trader.client:
+                from py_clob_client.clob_types import BalanceAllowanceParams
+                result = self.trader.client.get_balance_allowance(
+                    BalanceAllowanceParams(
+                        asset_type=0,  # USDC collateral
+                        signature_type=Config.SIGNATURE_TYPE,
+                    )
+                )
+                if result and 'balance' in result:
+                    return float(result['balance']) / 1e6  # USDC has 6 decimals
+        except Exception as e:
+            log(f"⚠️ Polymarket balance query failed: {e}")
+        # Fallback to on-chain wallet balance
+        try:
+            from src.core.wallet import get_usdc_balance
+            from eth_account import Account
+            address = Account.from_key(Config.PRIVATE_KEY).address
+            return get_usdc_balance(address)
+        except Exception:
+            return None
 
     def _init_strategies(self):
         """Initialize strategy modules."""
@@ -533,15 +554,12 @@ class BotEngine:
                             "source": signal.source,
                         }))
 
-                # Refresh wallet balance in live mode (every 60s)
+                # Refresh Polymarket balance in live mode (every 60s)
                 if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
                     now = time.time()
                     if now - getattr(self, '_last_balance_check', 0) > 60:
                         try:
-                            from src.core.wallet import get_usdc_balance
-                            from eth_account import Account
-                            address = Account.from_key(Config.PRIVATE_KEY).address
-                            live_balance = get_usdc_balance(address)
+                            live_balance = self._get_polymarket_balance()
                             if live_balance is not None:
                                 self.state.bankroll = live_balance
                                 self.state.peak_bankroll = max(self.state.peak_bankroll, live_balance)
