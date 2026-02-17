@@ -211,6 +211,16 @@ class BotEngine:
                 # Wire spread farmer to main trading state for trade logging
                 if hasattr(self._arb_strategy, 'spread_farmer'):
                     self._arb_strategy.spread_farmer._trading_state = self.state
+                
+                # Initialize momentum strategy (directional 2x bets)
+                try:
+                    from src.strategies.momentum import MomentumStrategy
+                    self._momentum = MomentumStrategy(bet_size=10.0)
+                    self._momentum._trading_state = self.state
+                    log("🎯 Momentum strategy loaded (Binance.US price feed)")
+                except ImportError as e:
+                    log(f"⚠️ Momentum strategy unavailable: {e}")
+                    self._momentum = None
                 # Link Chainlink as PRIMARY price source
                 if self._chainlink_feed and self._chainlink_momentum:
                     self._arb_strategy.latency_arb.set_chainlink(
@@ -380,6 +390,29 @@ class BotEngine:
                     if new_markets:
                         log(f"[SPREAD] 📡 {len(markets)} markets, {len(sf.active_cycles)} active cycles, {len(new_markets)} new to post")
                     await self._arb_strategy.tick_spread_farmer(markets)
+
+                # Tick momentum strategy (directional 2x bets)
+                if getattr(self, '_momentum', None) and markets:
+                    for market in markets:
+                        if market.closed or not market.accepting_orders:
+                            continue
+                        # Detect asset from slug
+                        slug = market.slug.lower()
+                        if "btc" in slug:
+                            asset = "BTC"
+                        elif "eth" in slug:
+                            asset = "ETH"
+                        elif "sol" in slug:
+                            asset = "SOL"
+                        else:
+                            continue
+                        
+                        signal = await self._momentum.check_momentum(asset)
+                        if signal:
+                            await self._momentum.place_directional_bet(
+                                market, signal, paper=Config.PAPER_TRADE
+                            )
+                            break  # One directional bet per check cycle
 
                 # Legacy arb scan for mispriced markets
                 signals = self._arb_strategy.evaluate_all_markets(markets, self.state.bankroll)
@@ -973,6 +1006,40 @@ class BotEngine:
                                 import time as _t
                                 _f.write(f"{_t.strftime('%H:%M:%S')} [SPREAD] ❌ Error: {cycle.market_slug}: {e}\n")
                                 _f.flush()
+
+                # Settle momentum bets
+                if getattr(self, '_momentum', None):
+                    for bet in list(self._momentum.active_bets):
+                        if bet.get("settled"):
+                            continue
+                        try:
+                            # Parse market type from slug
+                            slug = bet["market_slug"]
+                            if "btc" in slug.lower():
+                                mt = MarketType.BTC_5M
+                            elif "eth" in slug.lower():
+                                mt = MarketType.ETH_5M
+                            else:
+                                mt = MarketType.SOL_5M
+                            
+                            market = self.client.get_market(mt, bet["window_ts"], use_cache=False)
+                            if not market:
+                                continue
+                            
+                            outcome = market.outcome
+                            if not outcome and market.closed:
+                                outcome = "up" if market.up_price > 0.5 else "down"
+                            if not outcome and (market.up_price > 0.90 or market.down_price > 0.90):
+                                outcome = "up" if market.up_price > 0.90 else "down"
+                            
+                            import time as _t
+                            window_passed = _t.time() > (bet["window_ts"] + 300 + 60)
+                            
+                            if outcome and (market.closed or window_passed):
+                                self._momentum.settle_bet(bet, outcome)
+                        except Exception as e:
+                            with open("/tmp/spread_trades.log", "a") as _f:
+                                _f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:12]} [MOMENTUM] ❌ Error settling: {e}\n")
 
                 await asyncio.sleep(Config.SETTLEMENT_CHECK_INTERVAL)
 
