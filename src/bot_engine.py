@@ -136,11 +136,14 @@ class BotEngine:
             try:
                 import httpx
                 import py_clob_client.http_helpers.helpers as clob_helpers
+                proxy_url = Config.PROXY_URL
+                # Force http scheme if no scheme specified
+                if not proxy_url.startswith(("http://", "https://", "socks")):
+                    proxy_url = f"http://{proxy_url}"
                 clob_helpers._http_client = httpx.Client(
-                    http2=True,
-                    proxy=Config.PROXY_URL,
+                    proxy=proxy_url,
                 )
-                log(f"🌐 Proxy configured for Polymarket API: {Config.PROXY_URL.split('@')[-1] if '@' in Config.PROXY_URL else Config.PROXY_URL}")
+                log(f"🌐 Proxy configured for Polymarket API: {proxy_url.split('@')[-1] if '@' in proxy_url else proxy_url}")
             except Exception as e:
                 log(f"⚠️ Proxy setup failed: {e}")
 
