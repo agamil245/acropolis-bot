@@ -162,7 +162,7 @@ class Config:
     PAPER_TRADE: bool = os.getenv("PAPER_TRADE", "true").lower() == "true"
 
     # ===== MARKETS =====
-    _active_markets_str = os.getenv("ACTIVE_MARKETS", "BTC_5M,ETH_5M,SOL_5M")
+    _active_markets_str = os.getenv("ACTIVE_MARKETS", "BTC_5M,BTC_15M,ETH_5M,ETH_15M,SOL_5M,SOL_15M")
     ACTIVE_MARKETS: list[MarketType] = [
         MarketType[m.strip()]
         for m in _active_markets_str.split(",")
