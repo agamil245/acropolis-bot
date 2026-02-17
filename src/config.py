@@ -147,6 +147,12 @@ class Config:
     Risk level presets affect multiple parameters simultaneously.
     """
 
+    # ===== TELEGRAM NOTIFICATIONS =====
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    TELEGRAM_ENABLED: bool = os.getenv("TELEGRAM_ENABLED", "true").lower() == "true"
+    TELEGRAM_PNL_INTERVAL: int = int(os.getenv("TELEGRAM_PNL_INTERVAL", "300"))  # seconds
+
     # ===== WALLET =====
     PRIVATE_KEY: str = os.getenv("PRIVATE_KEY", "")
     FUNDER_ADDRESS: str = os.getenv("FUNDER_ADDRESS", "")

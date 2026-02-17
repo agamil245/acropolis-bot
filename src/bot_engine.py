@@ -200,6 +200,20 @@ class BotEngine:
         # Initialize Chainlink first — it's the primary data source
         self._init_chainlink()
 
+        # Initialize Telegram notifications
+        self._telegram = None
+        if Config.TELEGRAM_ENABLED and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID:
+            try:
+                from src.notifications.telegram import TelegramNotifier
+                self._telegram = TelegramNotifier(
+                    bot_token=Config.TELEGRAM_BOT_TOKEN,
+                    chat_id=Config.TELEGRAM_CHAT_ID,
+                )
+                self._telegram._pnl_update_interval = Config.TELEGRAM_PNL_INTERVAL
+                log("📱 Telegram notifications enabled")
+            except Exception as e:
+                log(f"⚠️ Telegram init error: {e}")
+
         if Config.ENABLE_ARBITRAGE:
             try:
                 from src.strategies.arbitrage import ArbitrageStrategy
@@ -259,6 +273,11 @@ class BotEngine:
 
         # Initialize strategies
         self._init_strategies()
+
+        # Send Telegram startup notification
+        if getattr(self, '_telegram', None):
+            mode = "PAPER" if Config.PAPER_TRADE else "LIVE"
+            await self._telegram.notify_bot_started(self.state.bankroll, mode)
 
         # Emit start event
         self.events.emit(Event(EventType.BOT_STARTED, {
@@ -409,9 +428,25 @@ class BotEngine:
                         
                         signal = await self._momentum.check_momentum(asset)
                         if signal:
-                            await self._momentum.place_directional_bet(
+                            # Notify signal
+                            if getattr(self, '_telegram', None):
+                                await self._telegram.notify_momentum_signal(
+                                    asset, signal.direction, signal.price_change_pct,
+                                    signal.confidence, self._momentum._current_window_ts or 0,
+                                )
+                            bet = await self._momentum.place_directional_bet(
                                 market, signal, paper=Config.PAPER_TRADE
                             )
+                            # Notify trade opened
+                            if bet and self._telegram:
+                                await self._telegram.notify_trade_opened(
+                                    strategy="momentum",
+                                    side=bet["side"],
+                                    price=bet["price"],
+                                    size=bet["size"],
+                                    market_slug=bet["market_slug"],
+                                    extra=f"Momentum: {signal.price_change_pct:+.4f}%",
+                                )
                             break  # One directional bet per check cycle
 
                 # Legacy arb scan for mispriced markets
@@ -457,6 +492,25 @@ class BotEngine:
                             "edge_pct": signal.edge_pct,
                             "source": signal.source,
                         }))
+
+                # Periodic PnL update via Telegram
+                if getattr(self, '_telegram', None):
+                    momentum_stats = self._momentum.stats.to_dict() if getattr(self, '_momentum', None) else {}
+                    sf_stats = self._arb_strategy.spread_farmer.stats.to_dict() if self._arb_strategy else {}
+                    sf_strategy = self.state.strategy_stats.get("spread_farmer", {})
+                    mt_stats_raw = {
+                        "trades_taken": self._momentum.stats.trades_taken if getattr(self, '_momentum', None) else 0,
+                        "wins": self._momentum.stats.wins if getattr(self, '_momentum', None) else 0,
+                        "losses": self._momentum.stats.losses if getattr(self, '_momentum', None) else 0,
+                        "total_pnl": self._momentum.stats.total_pnl if getattr(self, '_momentum', None) else 0,
+                    }
+                    await self._telegram.send_pnl_update(
+                        bankroll=self.state.bankroll,
+                        total_pnl=self.state.daily_pnl,
+                        spread_stats=sf_strategy,
+                        momentum_stats=mt_stats_raw,
+                        uptime_seconds=time.time() - self._start_time if hasattr(self, '_start_time') else 0,
+                    )
 
                 await asyncio.sleep(Config.ARB_CHECK_INTERVAL)
 
@@ -993,9 +1047,27 @@ class BotEngine:
                                 actual_outcome = outcome or "up"  # doesn't matter for full fill
                                 sf.settle_cycle(cycle, actual_outcome)
                                 log(f"[SPREAD] 🎯 FULL FILL settled {cycle.market_slug}: PnL: ${cycle.pnl:+.4f}")
+                                if getattr(self, '_telegram', None):
+                                    await self._telegram.notify_trade_closed(
+                                        strategy="spread", side="YES+NO",
+                                        market_slug=cycle.market_slug, outcome=actual_outcome,
+                                        pnl=cycle.pnl, won=cycle.pnl > 0,
+                                        record_wins=sf.stats.full_fills,
+                                        record_losses=sf.stats.partial_fills,
+                                        bankroll=self.state.bankroll,
+                                    )
                             elif cycle.partial_fill and outcome and (market.closed or window_passed):
                                 sf.settle_cycle(cycle, outcome)
                                 log(f"[SPREAD] 🎯 Partial settled {cycle.market_slug}: {outcome} | PnL: ${cycle.pnl:+.4f}")
+                                if getattr(self, '_telegram', None):
+                                    await self._telegram.notify_trade_closed(
+                                        strategy="spread", side="PARTIAL",
+                                        market_slug=cycle.market_slug, outcome=outcome,
+                                        pnl=cycle.pnl, won=cycle.pnl > 0,
+                                        record_wins=sf.stats.full_fills,
+                                        record_losses=sf.stats.partial_fills,
+                                        bankroll=self.state.bankroll,
+                                    )
 
                             with open("/tmp/spread_trades.log", "a") as _f:
                                 if cycle.settled:
@@ -1037,6 +1109,19 @@ class BotEngine:
                             
                             if outcome and (market.closed or window_passed):
                                 self._momentum.settle_bet(bet, outcome)
+                                # Notify settlement
+                                if getattr(self, '_telegram', None):
+                                    await self._telegram.notify_trade_closed(
+                                        strategy="momentum",
+                                        side=bet["side"],
+                                        market_slug=bet["market_slug"],
+                                        outcome=outcome,
+                                        pnl=bet["pnl"],
+                                        won=bet["pnl"] > 0,
+                                        record_wins=self._momentum.stats.wins,
+                                        record_losses=self._momentum.stats.losses,
+                                        bankroll=self.state.bankroll,
+                                    )
                         except Exception as e:
                             with open("/tmp/spread_trades.log", "a") as _f:
                                 _f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:12]} [MOMENTUM] ❌ Error settling: {e}\n")

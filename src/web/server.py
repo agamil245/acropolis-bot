@@ -466,6 +466,10 @@ async def update_settings(request: Request):
         "streak_trigger": ("STREAK_TRIGGER", int),
         "arb_threshold": ("ARB_THRESHOLD", float),
         "arb_min_edge_pct": ("ARB_MIN_EDGE_PCT", float),
+        "telegram_bot_token": ("TELEGRAM_BOT_TOKEN", str),
+        "telegram_chat_id": ("TELEGRAM_CHAT_ID", str),
+        "telegram_enabled": ("TELEGRAM_ENABLED", bool),
+        "telegram_pnl_interval": ("TELEGRAM_PNL_INTERVAL", int),
     }
 
     for key, value in body.items():
@@ -497,6 +501,10 @@ async def get_settings():
         "streak_trigger": Config.STREAK_TRIGGER,
         "arb_threshold": Config.ARB_THRESHOLD,
         "arb_min_edge_pct": Config.ARB_MIN_EDGE_PCT,
+        "telegram_bot_token": Config.TELEGRAM_BOT_TOKEN[:10] + "..." if Config.TELEGRAM_BOT_TOKEN else "",
+        "telegram_chat_id": Config.TELEGRAM_CHAT_ID,
+        "telegram_enabled": Config.TELEGRAM_ENABLED,
+        "telegram_pnl_interval": Config.TELEGRAM_PNL_INTERVAL,
     })
 
 
