@@ -355,29 +355,32 @@ class SpreadFarmer:
         dynamic_size = self.get_dynamic_order_size()
         adjusted_size = dynamic_size * vol_size_multiplier
 
-        # Place YES order
-        if market.up_token_id:
-            yes_order = await self.place_limit_order(
-                token_id=market.up_token_id,
-                side="YES",
-                price=yes_price,
-                size=adjusted_size,
-                market_slug=market.slug,
-                market_ts=market.timestamp,
-            )
-            cycle.yes_order = yes_order
+        # Place YES + NO simultaneously — both legs fire at the same time
+        import asyncio
+        yes_coro = self.place_limit_order(
+            token_id=market.up_token_id,
+            side="YES",
+            price=yes_price,
+            size=adjusted_size,
+            market_slug=market.slug,
+            market_ts=market.timestamp,
+        ) if market.up_token_id else asyncio.sleep(0)
 
-        # Place NO order
-        if market.down_token_id:
-            no_order = await self.place_limit_order(
-                token_id=market.down_token_id,
-                side="NO",
-                price=no_price,
-                size=adjusted_size,
-                market_slug=market.slug,
-                market_ts=market.timestamp,
-            )
-            cycle.no_order = no_order
+        no_coro = self.place_limit_order(
+            token_id=market.down_token_id,
+            side="NO",
+            price=no_price,
+            size=adjusted_size,
+            market_slug=market.slug,
+            market_ts=market.timestamp,
+        ) if market.down_token_id else asyncio.sleep(0)
+
+        results = await asyncio.gather(yes_coro, no_coro, return_exceptions=True)
+
+        if market.up_token_id and not isinstance(results[0], Exception):
+            cycle.yes_order = results[0]
+        if market.down_token_id and not isinstance(results[1], Exception):
+            cycle.no_order = results[1]
 
         self.active_cycles.append(cycle)
         self.stats.cycles_created += 1
