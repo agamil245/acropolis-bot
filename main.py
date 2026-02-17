@@ -7,6 +7,12 @@ Main entry point: starts both the trading bot AND web dashboard.
 import asyncio
 import sys
 import threading
+import os
+
+# Force unbuffered output so we see prints immediately
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
 import uvicorn
 

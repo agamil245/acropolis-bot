@@ -273,7 +273,10 @@ class BotEngine:
         # Send Telegram startup notification
         if getattr(self, '_telegram', None):
             mode = "PAPER" if Config.PAPER_TRADE else "LIVE"
-            await self._telegram.notify_bot_started(self.state.bankroll, mode)
+            try:
+                await asyncio.wait_for(self._telegram.notify_bot_started(self.state.bankroll, mode), timeout=5)
+            except Exception as e:
+                print(f"[TELEGRAM] Startup notification failed: {e}")
 
         # Emit start event
         self.events.emit(Event(EventType.BOT_STARTED, {
@@ -322,7 +325,10 @@ class BotEngine:
 
         # Wait for all tasks
         try:
-            await asyncio.gather(*self._tasks)
+            results = await asyncio.gather(*self._tasks, return_exceptions=True)
+            for i, result in enumerate(results):
+                if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                    log(f"[ENGINE] ❌ Task {i} crashed: {result}")
         except asyncio.CancelledError:
             pass
 
@@ -513,7 +519,9 @@ class BotEngine:
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                import traceback
                 log(f"[HYBRID] Error: {e}")
+                traceback.print_exc()
                 self.events.emit(Event(EventType.ERROR, {"strategy": "arbitrage", "error": str(e)}))
                 await asyncio.sleep(1)
 

@@ -299,18 +299,21 @@ class MomentumStrategy:
             buy_side = "NO"
             buy_price = market.down_price if market.down_price < 0.60 else 0.50
         
-        # Dynamic bet size based on confidence
-        if signal.confidence >= 0.75:
-            size = self.bet_size * 1.5  # Strong signal = 1.5x bet
-        elif signal.confidence >= 0.60:
-            size = self.bet_size
-        else:
-            size = self.bet_size * 0.5  # Weak signal = half bet
+        # Dynamic bet size: scale between min and max based on confidence
+        from src.config import Config
+        min_bet = Config.MOMENTUM_MIN_BET
+        max_bet = Config.MOMENTUM_MAX_BET
+        max_pct = Config.MOMENTUM_MAX_BANKROLL_PCT / 100.0
         
-        # Cap at available bankroll
+        # Linear interpolation: 55% conf → min_bet, 80% conf → max_bet
+        conf_range = max(signal.confidence - 0.55, 0) / 0.25  # 0.0 to 1.0
+        conf_range = min(conf_range, 1.0)
+        size = min_bet + (max_bet - min_bet) * conf_range
+        
+        # Cap at max % of bankroll
         if self._trading_state:
-            max_bet = self._trading_state.bankroll * 0.10  # Max 10% per directional bet
-            size = min(size, max_bet)
+            bankroll_cap = self._trading_state.bankroll * max_pct
+            size = min(size, bankroll_cap)
         
         bet = {
             "market_slug": market.slug,

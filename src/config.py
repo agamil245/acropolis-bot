@@ -153,6 +153,11 @@ class Config:
     TELEGRAM_ENABLED: bool = os.getenv("TELEGRAM_ENABLED", "true").lower() == "true"
     TELEGRAM_PNL_INTERVAL: int = int(os.getenv("TELEGRAM_PNL_INTERVAL", "300"))  # seconds
 
+    # ===== MOMENTUM BET SIZING =====
+    MOMENTUM_MIN_BET: float = float(os.getenv("MOMENTUM_MIN_BET", "5.0"))
+    MOMENTUM_MAX_BET: float = float(os.getenv("MOMENTUM_MAX_BET", "50.0"))
+    MOMENTUM_MAX_BANKROLL_PCT: float = float(os.getenv("MOMENTUM_MAX_BANKROLL_PCT", "25.0"))  # max % of bankroll per bet
+
     # ===== WALLET =====
     PRIVATE_KEY: str = os.getenv("PRIVATE_KEY", "")
     FUNDER_ADDRESS: str = os.getenv("FUNDER_ADDRESS", "")

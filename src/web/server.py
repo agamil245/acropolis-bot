@@ -470,6 +470,9 @@ async def update_settings(request: Request):
         "telegram_chat_id": ("TELEGRAM_CHAT_ID", str),
         "telegram_enabled": ("TELEGRAM_ENABLED", bool),
         "telegram_pnl_interval": ("TELEGRAM_PNL_INTERVAL", int),
+        "momentum_min_bet": ("MOMENTUM_MIN_BET", float),
+        "momentum_max_bet": ("MOMENTUM_MAX_BET", float),
+        "momentum_max_bankroll_pct": ("MOMENTUM_MAX_BANKROLL_PCT", float),
     }
 
     for key, value in body.items():
@@ -505,6 +508,9 @@ async def get_settings():
         "telegram_chat_id": Config.TELEGRAM_CHAT_ID,
         "telegram_enabled": Config.TELEGRAM_ENABLED,
         "telegram_pnl_interval": Config.TELEGRAM_PNL_INTERVAL,
+        "momentum_min_bet": Config.MOMENTUM_MIN_BET,
+        "momentum_max_bet": Config.MOMENTUM_MAX_BET,
+        "momentum_max_bankroll_pct": Config.MOMENTUM_MAX_BANKROLL_PCT,
     })
 
 

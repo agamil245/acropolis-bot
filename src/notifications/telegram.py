@@ -43,14 +43,24 @@ class TelegramNotifier:
             return False
         
         try:
-            session = await self._get_session()
-            url = f"{TELEGRAM_API}/bot{self.bot_token}/sendMessage"
-            payload = {
-                "chat_id": self.chat_id,
-                "text": text,
-                "parse_mode": parse_mode,
-                "disable_web_page_preview": True,
-            }
+            return await asyncio.wait_for(self._do_send(text, parse_mode), timeout=8)
+        except asyncio.TimeoutError:
+            print(f"[TELEGRAM] ❌ Send timed out (8s)")
+            return False
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Error: {e}")
+            return False
+
+    async def _do_send(self, text: str, parse_mode: str = "HTML") -> bool:
+        """Internal send with fresh session each time."""
+        url = f"{TELEGRAM_API}/bot{self.bot_token}/sendMessage"
+        payload = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "parse_mode": parse_mode,
+            "disable_web_page_preview": True,
+        }
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
             async with session.post(url, json=payload) as resp:
                 if resp.status == 200:
                     return True
@@ -58,9 +68,6 @@ class TelegramNotifier:
                     error = await resp.text()
                     print(f"[TELEGRAM] ❌ Send failed ({resp.status}): {error}")
                     return False
-        except Exception as e:
-            print(f"[TELEGRAM] ❌ Error: {e}")
-            return False
 
     # ── Trade Notifications ───────────────────────────────────────────────
 
