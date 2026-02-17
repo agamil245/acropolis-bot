@@ -200,14 +200,17 @@ class BotEngine:
         if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
             try:
                 balance = self._get_polymarket_balance()
-                if balance is not None:
+                if balance and balance > 0:
                     self.state.bankroll = balance
                     self.state.peak_bankroll = max(self.state.peak_bankroll, balance)
                     log(f"💰 Polymarket balance: ${balance:.2f} USDC")
                 else:
-                    log(f"⚠️ Could not fetch Polymarket balance, using config: ${self.state.bankroll:.2f}")
+                    self.state.bankroll = Config.INITIAL_BANKROLL
+                    self.state.peak_bankroll = Config.INITIAL_BANKROLL
+                    log(f"💰 Using configured bankroll: ${Config.INITIAL_BANKROLL:.2f} (CLOB balance query returned 0 — funds may be in positions)")
             except Exception as e:
-                log(f"⚠️ Balance check failed: {e}")
+                self.state.bankroll = Config.INITIAL_BANKROLL
+                log(f"⚠️ Balance check failed: {e} — using ${Config.INITIAL_BANKROLL:.2f}")
 
         # Save starting bankroll for PnL calculation
         self._starting_bankroll = self.state.bankroll
@@ -562,9 +565,10 @@ class BotEngine:
                     if now - getattr(self, '_last_balance_check', 0) > 60:
                         try:
                             live_balance = self._get_polymarket_balance()
-                            if live_balance is not None:
+                            if live_balance and live_balance > 0:
                                 self.state.bankroll = live_balance
                                 self.state.peak_bankroll = max(self.state.peak_bankroll, live_balance)
+                            # If 0, don't overwrite — keep tracking from config
                         except Exception:
                             pass
                         self._last_balance_check = now
