@@ -196,6 +196,10 @@ class BotEngine:
             except Exception as e:
                 log(f"⚠️ Wallet balance check failed: {e}")
 
+        # Save starting bankroll for PnL calculation
+        self._starting_bankroll = self.state.bankroll
+        self._last_balance_check = 0.0
+
         log(f"Loaded state: bankroll=${self.state.bankroll:.2f}, "
             f"{len(self.state.trades)} trades, "
             f"{len(self.state.get_pending_trades())} pending")
@@ -513,6 +517,22 @@ class BotEngine:
                             "source": signal.source,
                         }))
 
+                # Refresh wallet balance in live mode (every 60s)
+                if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
+                    now = time.time()
+                    if now - getattr(self, '_last_balance_check', 0) > 60:
+                        try:
+                            from src.core.wallet import get_usdc_balance
+                            from eth_account import Account
+                            address = Account.from_key(Config.PRIVATE_KEY).address
+                            live_balance = get_usdc_balance(address)
+                            if live_balance is not None:
+                                self.state.bankroll = live_balance
+                                self.state.peak_bankroll = max(self.state.peak_bankroll, live_balance)
+                        except Exception:
+                            pass
+                        self._last_balance_check = now
+
                 # Periodic PnL update via Telegram
                 if getattr(self, '_telegram', None):
                     momentum_stats = self._momentum.stats.to_dict() if getattr(self, '_momentum', None) else {}
@@ -524,9 +544,11 @@ class BotEngine:
                         "losses": self._momentum.stats.losses if getattr(self, '_momentum', None) else 0,
                         "total_pnl": self._momentum.stats.total_pnl if getattr(self, '_momentum', None) else 0,
                     }
+                    # PnL = current balance - starting balance
+                    real_pnl = self.state.bankroll - getattr(self, '_starting_bankroll', self.state.bankroll)
                     await self._telegram.send_pnl_update(
                         bankroll=self.state.bankroll,
-                        total_pnl=self.state.daily_pnl,
+                        total_pnl=real_pnl,
                         spread_stats=sf_strategy,
                         momentum_stats=mt_stats_raw,
                         uptime_seconds=time.time() - self._start_time if hasattr(self, '_start_time') else 0,
