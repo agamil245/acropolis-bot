@@ -1126,7 +1126,18 @@ class LiveTrader:
                     chain_id=Config.CHAIN_ID,
                 )
 
-            creds = self.client.create_or_derive_api_creds()
+            # Retry API cred derivation (proxy can be flaky on first request)
+            creds = None
+            for attempt in range(5):
+                try:
+                    creds = self.client.create_or_derive_api_creds()
+                    break
+                except Exception as e:
+                    print(f"[trader] API creds attempt {attempt+1}/5 failed: {e}")
+                    import time as _t
+                    _t.sleep(2)
+            if not creds:
+                raise RuntimeError("Failed to derive API creds after 5 attempts")
             self.client.set_api_creds(creds)
 
             wallet_type = "proxy" if Config.SIGNATURE_TYPE == 1 else "EOA"
@@ -1134,6 +1145,8 @@ class LiveTrader:
 
         except ImportError:
             raise ImportError("py-clob-client not installed. Run: pip install py-clob-client")
+        except RuntimeError:
+            raise
         except Exception as e:
             raise RuntimeError(f"Failed to init trading client: {e}")
 
