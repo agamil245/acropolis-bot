@@ -208,6 +208,9 @@ class BotEngine:
                     market_cache=self.market_cache,
                 )
                 log("⚡ Hybrid strategy loaded (Spread Farmer + Latency Arb)")
+                # Wire spread farmer to main trading state for trade logging
+                if hasattr(self._arb_strategy, 'spread_farmer'):
+                    self._arb_strategy.spread_farmer._trading_state = self.state
                 # Link Chainlink as PRIMARY price source
                 if self._chainlink_feed and self._chainlink_momentum:
                     self._arb_strategy.latency_arb.set_chainlink(
@@ -918,6 +921,23 @@ class BotEngine:
 
                     except Exception as e:
                         log(f"[SETTLE] Error settling {trade.id}: {e}")
+
+                # Also settle spread farmer cycles
+                if self._arb_strategy and hasattr(self._arb_strategy, 'spread_farmer'):
+                    sf = self._arb_strategy.spread_farmer
+                    for cycle in list(sf.active_cycles):
+                        if cycle.settled:
+                            continue
+                        if not cycle.partial_fill and not cycle.both_filled:
+                            continue  # No fills yet
+                        try:
+                            from src.config import MarketType
+                            mt = MarketType.from_slug(cycle.market_slug) if hasattr(MarketType, 'from_slug') else MarketType.BTC_5M
+                            market = self.client.get_market(mt, cycle.market_ts, use_cache=False)
+                            if market and market.closed and market.outcome:
+                                sf.settle_cycle(cycle, market.outcome)
+                        except Exception as e:
+                            pass
 
                 await asyncio.sleep(Config.SETTLEMENT_CHECK_INTERVAL)
 

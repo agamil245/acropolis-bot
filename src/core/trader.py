@@ -472,6 +472,8 @@ class TradingState:
         "arbitrage": {"trades": 0, "pnl": 0.0, "wins": 0, "losses": 0},
         "streak": {"trades": 0, "pnl": 0.0, "wins": 0, "losses": 0},
         "copytrade": {"trades": 0, "pnl": 0.0, "wins": 0, "losses": 0},
+        "spread_farmer": {"trades": 0, "pnl": 0.0, "wins": 0, "losses": 0},
+        "panic_reversal": {"trades": 0, "pnl": 0.0, "wins": 0, "losses": 0},
     })
 
     # History tracking
@@ -625,6 +627,36 @@ class TradingState:
                     f"[CIRCUIT BREAKER] {cb_threshold} consecutive losses. "
                     f"Pausing for {Config.COOLDOWN_MINUTES} minutes."
                 )
+
+    def record_settled_trade(self, trade: Trade):
+        """Record a trade that's already settled (e.g., from spread farmer).
+        
+        Unlike record_trade + settle_trade, this handles trades that were
+        placed and settled by an internal strategy engine.
+        """
+        self.trades.append(trade)
+        self.daily_bets += 1
+
+        # Ensure strategy stats exist
+        if trade.strategy not in self.strategy_stats:
+            self.strategy_stats[trade.strategy] = {"trades": 0, "pnl": 0.0, "wins": 0, "losses": 0}
+
+        self.strategy_stats[trade.strategy]["trades"] += 1
+        self.strategy_stats[trade.strategy]["pnl"] += trade.net_pnl
+        if trade.won:
+            self.strategy_stats[trade.strategy]["wins"] += 1
+        else:
+            self.strategy_stats[trade.strategy]["losses"] += 1
+
+        # Update bankroll
+        self.bankroll += trade.net_pnl
+        trade.bankroll_after = self.bankroll
+
+        if self.bankroll > self.peak_bankroll:
+            self.peak_bankroll = self.bankroll
+
+        self.daily_pnl += trade.net_pnl
+        self.save()
 
     def mark_pending_as_force_exit(self, reason: str):
         """Mark all pending trades as force_exit before shutdown."""

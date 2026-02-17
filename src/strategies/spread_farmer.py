@@ -159,6 +159,9 @@ class SpreadFarmer:
         # Bayesian model reference (set by coordinator)
         self.bayesian_model: Optional["BayesianModel"] = None
 
+        # Main trading state reference (set by bot engine for trade logging)
+        self._trading_state = None
+
     # ── Order Management ──────────────────────────────────────────────────
 
     async def place_limit_order(
@@ -444,7 +447,7 @@ class SpreadFarmer:
                         await self.cancel_order(order.order_id)
 
     def settle_cycle(self, cycle: SpreadCycle, outcome: str):
-        """Settle a cycle after market resolution."""
+        """Settle a cycle after market resolution and log to main trading state."""
         if cycle.settled:
             return
 
@@ -455,6 +458,9 @@ class SpreadFarmer:
             cycle.pnl = 1.0 - cycle.total_cost
             self.stats.total_pnl += cycle.pnl
             self.stats.best_cycle_pnl = max(self.stats.best_cycle_pnl, cycle.pnl)
+            # Log to main trading state
+            if self._trading_state:
+                self._record_spread_trade(cycle, outcome, "full_fill")
         elif cycle.partial_fill:
             self.stats.partial_fills += 1
             # Partial: one side filled, outcome determines P&L
@@ -470,11 +476,58 @@ class SpreadFarmer:
                     cycle.pnl = -(cycle.no_order.fill_price or cycle.no_order.price)
             self.stats.total_pnl += cycle.pnl
             self.stats.worst_cycle_pnl = min(self.stats.worst_cycle_pnl, cycle.pnl)
+            # Log to main trading state
+            if self._trading_state:
+                self._record_spread_trade(cycle, outcome, "partial_fill")
 
         # Move to completed
         if cycle in self.active_cycles:
             self.active_cycles.remove(cycle)
         self.completed_cycles.append(cycle)
+
+    def _record_spread_trade(self, cycle: SpreadCycle, outcome: str, fill_type: str):
+        """Record a spread cycle as a trade in the main trading state."""
+        from src.core.trader import Trade
+        import time as _time
+
+        # Determine the filled side(s) and direction
+        if fill_type == "full_fill":
+            direction = "spread"  # Both sides filled
+            amount = cycle.total_cost
+            entry_price = cycle.total_cost
+        else:
+            # Partial fill — direction is the filled side
+            if cycle.yes_order and cycle.yes_order.filled:
+                direction = "up"
+                amount = cycle.yes_order.fill_price or cycle.yes_order.price
+                entry_price = amount
+            else:
+                direction = "down"
+                amount = cycle.no_order.fill_price or cycle.no_order.price
+                entry_price = amount
+
+        trade = Trade(
+            id=f"spread-{cycle.market_slug}-{cycle.market_ts}",
+            market_slug=cycle.market_slug,
+            market_type=None,
+            timestamp=cycle.market_ts,
+            direction=direction,
+            amount=amount,
+            entry_price=entry_price,
+            strategy="spread_farmer",
+            placed_at=int(cycle.created_at * 1000),
+        )
+
+        # Settle immediately since we already know the outcome
+        trade.outcome = outcome
+        trade.won = cycle.pnl > 0
+        trade.net_pnl = cycle.pnl
+        trade.settled_at = int(_time.time() * 1000)
+        trade.exit_price = 1.0 if trade.won else 0.0
+
+        self._trading_state.record_settled_trade(trade)
+        print(f"[SPREAD] 📊 Logged: {fill_type} on {cycle.market_slug} | "
+              f"{'✅' if trade.won else '❌'} PnL: ${cycle.pnl:+.4f}")
 
     # ── Override Control (for latency arb) ────────────────────────────────
 

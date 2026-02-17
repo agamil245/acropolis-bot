@@ -194,7 +194,7 @@ class Config:
     ARB_MIN_BET: float = float(os.getenv("ARB_MIN_BET", "5"))
 
     # ===== STREAK SETTINGS =====
-    STREAK_TRIGGER: int = int(os.getenv("STREAK_TRIGGER", "4"))
+    STREAK_TRIGGER: int = int(os.getenv("STREAK_TRIGGER", "3"))
     STREAK_MIN_REVERSAL_RATE: float = float(os.getenv("STREAK_MIN_REVERSAL_RATE", "0.60"))
     STREAK_USE_MARKET_PROFILE: bool = os.getenv("STREAK_USE_MARKET_PROFILE", "true").lower() == "true"
 
@@ -241,7 +241,7 @@ class Config:
     COOLDOWN_MINUTES: int = int(os.getenv("COOLDOWN_MINUTES", "30"))
 
     # ===== TIMING =====
-    ENTRY_SECONDS_BEFORE: int = int(os.getenv("ENTRY_SECONDS_BEFORE", "30"))
+    ENTRY_SECONDS_BEFORE: int = int(os.getenv("ENTRY_SECONDS_BEFORE", "120"))
     SETTLEMENT_CHECK_INTERVAL: float = float(os.getenv("SETTLEMENT_CHECK_INTERVAL", "10"))
 
     # ===== API SETTINGS =====
@@ -277,7 +277,7 @@ class Config:
     # ===== CHAINLINK ORACLE (Layer 2+: THE edge) =====
     CHAINLINK_RPC_URL: str = os.getenv("CHAINLINK_RPC_URL", "https://polygon-rpc.com")
     CHAINLINK_POLL_INTERVAL: float = float(os.getenv("CHAINLINK_POLL_INTERVAL", "1.0"))
-    CHAINLINK_MIN_DIVERGENCE: float = float(os.getenv("CHAINLINK_MIN_DIVERGENCE", "0.05"))  # 5¢
+    CHAINLINK_MIN_DIVERGENCE: float = float(os.getenv("CHAINLINK_MIN_DIVERGENCE", "0.03"))  # 3¢
     CHAINLINK_MIN_MOMENTUM_PCT: float = float(os.getenv("CHAINLINK_MIN_MOMENTUM_PCT", "0.5"))
     CHAINLINK_MIN_TIME_LEFT: int = int(os.getenv("CHAINLINK_MIN_TIME_LEFT", "60"))  # seconds
 
