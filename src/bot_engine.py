@@ -131,6 +131,19 @@ class BotEngine:
     """
 
     def __init__(self):
+        # Set up proxy for Polymarket API if configured
+        if Config.PROXY_URL:
+            try:
+                import httpx
+                import py_clob_client.http_helpers.helpers as clob_helpers
+                clob_helpers._http_client = httpx.Client(
+                    http2=True,
+                    proxy=Config.PROXY_URL,
+                )
+                log(f"🌐 Proxy configured for Polymarket API: {Config.PROXY_URL.split('@')[-1] if '@' in Config.PROXY_URL else Config.PROXY_URL}")
+            except Exception as e:
+                log(f"⚠️ Proxy setup failed: {e}")
+
         self.client = PolymarketClient()
         self.state = TradingState.load()
         self.events = EventBus()

@@ -391,6 +391,13 @@ class PolymarketClient:
         # Create session with connection pooling
         self.session = requests.Session()
 
+        # Add proxy if configured
+        if Config.PROXY_URL:
+            self.session.proxies = {
+                "http": Config.PROXY_URL,
+                "https": Config.PROXY_URL,
+            }
+
         # Configure retry strategy
         retry_strategy = Retry(
             total=Config.REST_RETRIES,

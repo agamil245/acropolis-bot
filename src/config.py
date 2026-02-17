@@ -292,6 +292,9 @@ class Config:
     CHAINLINK_MIN_MOMENTUM_PCT: float = float(os.getenv("CHAINLINK_MIN_MOMENTUM_PCT", "0.5"))
     CHAINLINK_MIN_TIME_LEFT: int = int(os.getenv("CHAINLINK_MIN_TIME_LEFT", "60"))  # seconds
 
+    # ===== PROXY (for Polymarket API in geo-restricted regions) =====
+    PROXY_URL: str = os.getenv("PROXY_URL", "")  # socks5://user:pass@ip:port
+
     # ===== POLYGONSCAN =====
     POLYGONSCAN_API_KEY: str = os.getenv("POLYGONSCAN_API_KEY", "")
 
