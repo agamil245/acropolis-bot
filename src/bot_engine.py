@@ -397,6 +397,7 @@ class BotEngine:
             try:
                 can_trade, reason = self.state.can_trade()
                 if not can_trade:
+                    log(f"[HYBRID] ⏸️ Can't trade: {reason}")
                     await asyncio.sleep(5)
                     continue
 

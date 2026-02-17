@@ -243,7 +243,7 @@ class Config:
     USE_KELLY: bool = os.getenv("USE_KELLY", "true").lower() == "true"
 
     # ===== RISK MANAGEMENT =====
-    MAX_DAILY_BETS: int = int(os.getenv("MAX_DAILY_BETS", "100"))
+    MAX_DAILY_BETS: int = int(os.getenv("MAX_DAILY_BETS", "1000"))
     MAX_DAILY_LOSS: float = float(os.getenv("MAX_DAILY_LOSS", "100"))
     DRAWDOWN_THRESHOLD: float = float(os.getenv("DRAWDOWN_THRESHOLD", "0.20"))
     MAX_POSITION_SIZE_PCT: float = float(os.getenv("MAX_POSITION_SIZE_PCT", "0.10"))  # Max 10% of bankroll per trade

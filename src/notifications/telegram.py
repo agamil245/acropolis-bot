@@ -5,7 +5,7 @@ directly to the user via Telegram Bot API.
 """
 
 import asyncio
-import aiohttp
+import httpx
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -19,7 +19,7 @@ class TelegramNotifier:
     def __init__(self, bot_token: str, chat_id: str):
         self.bot_token = bot_token
         self.chat_id = chat_id
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session = None  # unused, kept for compat
         self._enabled = bool(bot_token and chat_id)
         
         # PnL update tracking
@@ -52,7 +52,7 @@ class TelegramNotifier:
             return False
 
     async def _do_send(self, text: str, parse_mode: str = "HTML") -> bool:
-        """Internal send with fresh session each time."""
+        """Internal send using httpx."""
         url = f"{TELEGRAM_API}/bot{self.bot_token}/sendMessage"
         payload = {
             "chat_id": self.chat_id,
@@ -60,14 +60,13 @@ class TelegramNotifier:
             "parse_mode": parse_mode,
             "disable_web_page_preview": True,
         }
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-            async with session.post(url, json=payload) as resp:
-                if resp.status == 200:
-                    return True
-                else:
-                    error = await resp.text()
-                    print(f"[TELEGRAM] ❌ Send failed ({resp.status}): {error}")
-                    return False
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                return True
+            else:
+                print(f"[TELEGRAM] ❌ Send failed ({resp.status_code}): {resp.text}")
+                return False
 
     # ── Trade Notifications ───────────────────────────────────────────────
 
