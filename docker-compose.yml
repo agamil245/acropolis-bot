@@ -3,8 +3,7 @@ services:
     build: .
     container_name: acropolis-bot
     restart: always
-    expose:
-      - "8080"
+    network_mode: host
     env_file:
       - .env
     volumes:
@@ -15,10 +14,7 @@ services:
     image: nginx:alpine
     container_name: acropolis-nginx
     restart: always
-    ports:
-      - "80:80"
+    network_mode: host
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./.htpasswd:/etc/nginx/.htpasswd:ro
-    depends_on:
-      - acropolis
