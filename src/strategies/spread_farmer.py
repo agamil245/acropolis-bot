@@ -342,8 +342,19 @@ class SpreadFarmer:
         yes_price = max(0.01, min(0.49, yes_price))
         no_price = max(0.01, min(0.49, no_price))
 
-        if yes_price + no_price >= 0.99:
-            return None  # No edge
+        # Dynamic minimum edge based on position size
+        dynamic_size = self.get_dynamic_order_size()
+        if dynamic_size >= 500:
+            min_edge = 0.02   # 2% min when betting $500+/leg
+        elif dynamic_size >= 100:
+            min_edge = 0.03   # 3% min for $100-500/leg
+        else:
+            min_edge = 0.04   # 4% min under $100/leg — small bets need fat edges
+
+        total_cost = yes_price + no_price
+        edge = 1.0 - total_cost
+        if edge < min_edge:
+            return None  # Edge too thin for this size
 
         cycle = SpreadCycle(
             market_slug=market.slug,
