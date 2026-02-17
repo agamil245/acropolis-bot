@@ -179,6 +179,23 @@ class BotEngine:
 
         # Print startup info
         Config.print_summary()
+
+        # In live mode, fetch actual USDC balance from wallet
+        if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
+            try:
+                from src.core.wallet import get_usdc_balance
+                from eth_account import Account
+                address = Account.from_key(Config.PRIVATE_KEY).address
+                balance = get_usdc_balance(address)
+                if balance is not None:
+                    self.state.bankroll = balance
+                    self.state.peak_bankroll = max(self.state.peak_bankroll, balance)
+                    log(f"💰 Live wallet balance: ${balance:.2f} USDC ({address[:10]}...)")
+                else:
+                    log(f"⚠️ Could not fetch wallet balance, using config: ${self.state.bankroll:.2f}")
+            except Exception as e:
+                log(f"⚠️ Wallet balance check failed: {e}")
+
         log(f"Loaded state: bankroll=${self.state.bankroll:.2f}, "
             f"{len(self.state.trades)} trades, "
             f"{len(self.state.get_pending_trades())} pending")
