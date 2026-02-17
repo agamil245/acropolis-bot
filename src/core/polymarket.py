@@ -391,12 +391,8 @@ class PolymarketClient:
         # Create session with connection pooling
         self.session = requests.Session()
 
-        # Add proxy if configured
-        if Config.PROXY_URL:
-            self.session.proxies = {
-                "http": Config.PROXY_URL,
-                "https": Config.PROXY_URL,
-            }
+        # NOTE: Polymarket APIs are NOT geoblocked (only the website is).
+        # No proxy needed for API calls. Proxy was causing 403 errors.
 
         # Configure retry strategy
         retry_strategy = Retry(
@@ -464,18 +460,6 @@ class PolymarketClient:
             creds = client.create_or_derive_api_creds()
 
         client.set_api_creds(creds)
-
-        # Apply proxy if configured
-        if Config.PROXY_URL:
-            try:
-                if hasattr(client, 'client') and hasattr(client.client, '_client'):
-                    import httpx
-                    client.client._client = httpx.Client(proxy=Config.PROXY_URL, timeout=10.0)
-                if hasattr(client, 'session'):
-                    client.session.proxies = {"http": Config.PROXY_URL, "https": Config.PROXY_URL}
-            except Exception as e:
-                print(f"[polymarket] Proxy setup warning: {e}")
-
         return client
 
     # ─── Market Fetching ──────────────────────────────────────────────────
