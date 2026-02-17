@@ -374,6 +374,11 @@ class BotEngine:
 
                 # Tick spread farmer (Layer 1)
                 if self._arb_strategy:
+                    sf = self._arb_strategy.spread_farmer
+                    active_slugs = {c.market_slug for c in sf.active_cycles if not c.settled}
+                    new_markets = [m for m in markets if m.slug not in active_slugs and m.accepting_orders and not m.closed]
+                    if new_markets:
+                        log(f"[SPREAD] 📡 {len(markets)} markets, {len(sf.active_cycles)} active cycles, {len(new_markets)} new to post")
                     await self._arb_strategy.tick_spread_farmer(markets)
 
                 # Legacy arb scan for mispriced markets
@@ -931,13 +936,43 @@ class BotEngine:
                         if not cycle.partial_fill and not cycle.both_filled:
                             continue  # No fills yet
                         try:
-                            from src.config import MarketType
-                            mt = MarketType.from_slug(cycle.market_slug) if hasattr(MarketType, 'from_slug') else MarketType.BTC_5M
+                            mt = cycle.market_type if cycle.market_type else MarketType.BTC_5M
+                            if isinstance(mt, str):
+                                mt = MarketType.BTC_5M
                             market = self.client.get_market(mt, cycle.market_ts, use_cache=False)
-                            if market and market.closed and market.outcome:
-                                sf.settle_cycle(cycle, market.outcome)
+                            if not market:
+                                continue
+
+                            # Determine outcome from multiple signals
+                            outcome = market.outcome
+                            if not outcome and market.closed:
+                                outcome = "up" if market.up_price > 0.5 else "down"
+                            if not outcome and (market.up_price > 0.90 or market.down_price > 0.90):
+                                outcome = "up" if market.up_price > 0.90 else "down"
+
+                            # For FULL FILLS: we don't care about outcome — $1 payout guaranteed
+                            # Settle if market looks resolved OR both sides filled and window passed
+                            import time as _t
+                            window_passed = _t.time() > (cycle.market_ts + 300 + 60)  # 1 min after window close
+
+                            if cycle.both_filled and window_passed:
+                                # Both sides filled = guaranteed profit regardless of outcome
+                                actual_outcome = outcome or "up"  # doesn't matter for full fill
+                                sf.settle_cycle(cycle, actual_outcome)
+                                log(f"[SPREAD] 🎯 FULL FILL settled {cycle.market_slug}: PnL: ${cycle.pnl:+.4f}")
+                            elif cycle.partial_fill and outcome and (market.closed or window_passed):
+                                sf.settle_cycle(cycle, outcome)
+                                log(f"[SPREAD] 🎯 Partial settled {cycle.market_slug}: {outcome} | PnL: ${cycle.pnl:+.4f}")
+
+                            with open("/tmp/spread_trades.log", "a") as _f:
+                                if cycle.settled:
+                                    _f.write(f"{_t.strftime('%H:%M:%S')} [SPREAD] 🎯 Settled {cycle.market_slug}: PnL: ${cycle.pnl:+.4f}\n")
+                                _f.flush()
                         except Exception as e:
-                            pass
+                            with open("/tmp/spread_trades.log", "a") as _f:
+                                import time as _t
+                                _f.write(f"{_t.strftime('%H:%M:%S')} [SPREAD] ❌ Error: {cycle.market_slug}: {e}\n")
+                                _f.flush()
 
                 await asyncio.sleep(Config.SETTLEMENT_CHECK_INTERVAL)
 
