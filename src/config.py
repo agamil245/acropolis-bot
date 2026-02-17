@@ -275,7 +275,7 @@ class Config:
     MIN_PRICE_GAP: float = float(os.getenv("MIN_PRICE_GAP", "0.05"))  # min Poly lag to fire
 
     # ===== CHAINLINK ORACLE (Layer 2+: THE edge) =====
-    CHAINLINK_RPC_URL: str = os.getenv("CHAINLINK_RPC_URL", "https://rpc.ankr.com/polygon")
+    CHAINLINK_RPC_URL: str = os.getenv("CHAINLINK_RPC_URL", "https://polygon-rpc.com")
     CHAINLINK_POLL_INTERVAL: float = float(os.getenv("CHAINLINK_POLL_INTERVAL", "1.0"))
     CHAINLINK_MIN_DIVERGENCE: float = float(os.getenv("CHAINLINK_MIN_DIVERGENCE", "0.05"))  # 5¢
     CHAINLINK_MIN_MOMENTUM_PCT: float = float(os.getenv("CHAINLINK_MIN_MOMENTUM_PCT", "0.5"))
