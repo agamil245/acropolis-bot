@@ -173,7 +173,7 @@ class Config:
 
     # ===== STRATEGIES =====
     ENABLE_ARBITRAGE: bool = os.getenv("ENABLE_ARBITRAGE", "true").lower() == "true"
-    ENABLE_STREAK: bool = os.getenv("ENABLE_STREAK", "true").lower() == "true"
+    ENABLE_STREAK: bool = os.getenv("ENABLE_STREAK", "false").lower() == "true"
     ENABLE_COPYTRADE: bool = os.getenv("ENABLE_COPYTRADE", "false").lower() == "true"
     ENABLE_SELECTIVE: bool = os.getenv("ENABLE_SELECTIVE", "false").lower() == "true"
     ENABLE_PANIC_REVERSAL: bool = os.getenv("ENABLE_PANIC_REVERSAL", "true").lower() == "true"
