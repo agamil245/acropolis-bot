@@ -184,16 +184,12 @@ class BotEngine:
             f"{len(self.state.get_pending_trades())} pending")
 
     def _init_chainlink(self):
-        """Initialize Chainlink oracle price feed — THE edge."""
-        try:
-            from src.core.chainlink_feed import ChainlinkPriceFeed, ChainlinkMomentumDetector
-            self._chainlink_feed = ChainlinkPriceFeed()
-            self._chainlink_momentum = ChainlinkMomentumDetector(self._chainlink_feed)
-            log("🔗 Chainlink oracle feed initialized (BTC/ETH/SOL on Polygon)")
-        except ImportError as e:
-            log(f"⚠️ Chainlink feed unavailable (install web3): {e}")
-        except Exception as e:
-            log(f"⚠️ Chainlink feed init error: {e}")
+        """Initialize Chainlink oracle price feed — disabled to prevent RPC rate limit crashes."""
+        # Chainlink disabled — RPC rate limits crash the bot repeatedly.
+        # Spread farming + momentum use Binance.US instead.
+        self._chainlink_feed = None
+        self._chainlink_momentum = None
+        log("🔗 Chainlink disabled (using Binance.US for price feeds)")
 
     def _init_strategies(self):
         """Initialize strategy modules."""
