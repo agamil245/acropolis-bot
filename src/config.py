@@ -265,7 +265,7 @@ class Config:
 
     # ===== SPREAD FARMING (Layer 1) =====
     SPREAD_OFFSET: float = float(os.getenv("SPREAD_OFFSET", "0.02"))  # bid this far below mid
-    SPREAD_ORDER_SIZE: float = float(os.getenv("SPREAD_ORDER_SIZE", "10.0"))  # USD per leg
+    SPREAD_ORDER_SIZE: float = float(os.getenv("SPREAD_ORDER_SIZE", "25.0"))  # USD per leg
     SPREAD_REFRESH_INTERVAL: float = float(os.getenv("SPREAD_REFRESH_INTERVAL", "15.0"))  # seconds
 
     # ===== LATENCY ARB (Layer 2) =====
