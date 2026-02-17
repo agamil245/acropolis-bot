@@ -121,7 +121,7 @@ def _build_status() -> dict:
     status = bot.get_status()
 
     # Per-strategy stats from trade history
-    strat_stats = {"arbitrage": _empty_strat(), "streak": _empty_strat(), "copytrade": _empty_strat(), "panic_reversal": _empty_strat()}
+    strat_stats = {"arbitrage": _empty_strat(), "streak": _empty_strat(), "copytrade": _empty_strat(), "panic_reversal": _empty_strat(), "spread_farmer": _empty_strat()}
     for t in bot.state.trades:
         s = t.strategy if t.strategy in strat_stats else "copytrade"
         if s not in strat_stats:
