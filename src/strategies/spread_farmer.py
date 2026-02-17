@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
@@ -390,7 +391,7 @@ class SpreadFarmer:
                f"= {yes_price + no_price:.4f} ({edge_pct:.1f}% edge) on {market.slug}")
         print(msg)
         with open("/tmp/spread_trades.log", "a") as _f:
-            _f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+            _f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:12]} {msg}\n")
             _f.flush()
 
         return cycle
@@ -417,7 +418,7 @@ class SpreadFarmer:
                     msg = f"[SPREAD] ✅ Filled: {order.side}@{order.price:.4f} on {order.market_slug}"
                     print(msg)
                     with open("/tmp/spread_trades.log", "a") as _f:
-                        _f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+                        _f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:12]} {msg}\n")
                         _f.flush()
             else:
                 # Live mode: poll CLOB
@@ -534,7 +535,8 @@ class SpreadFarmer:
     def _record_spread_trade(self, cycle: SpreadCycle, outcome: str, fill_type: str):
         """Record a spread cycle as a trade in the main trading state."""
         from src.core.trader import Trade
-        import time as _time
+        import time
+        from datetime import datetime as _time
 
         # Determine the filled side(s) and direction
         if fill_type == "full_fill":
@@ -580,8 +582,8 @@ class SpreadFarmer:
         print(msg)
         # Also write to file to bypass stdout buffering
         with open("/tmp/spread_trades.log", "a") as _f:
-            import time as _t
-            _f.write(f"{_t.strftime('%H:%M:%S')} {msg}\n")
+            from datetime import datetime as _t
+            _f.write(f"{_t.now().strftime('%H:%M:%S.%f')[:12]} {msg}\n")
             _f.flush()
 
     # ── Override Control (for latency arb) ────────────────────────────────
