@@ -131,7 +131,20 @@ class BotEngine:
     """
 
     def __init__(self):
-        # NOTE: No proxy needed — Polymarket APIs are NOT geoblocked (only the website is)
+        # Proxy needed ONLY for CLOB write operations (order placement is geoblocked).
+        # Reads (Gamma API, CLOB balance, orderbook) work directly without proxy.
+        if Config.PROXY_URL:
+            try:
+                import httpx
+                import py_clob_client.http_helpers.helpers as clob_helpers
+                proxy_url = Config.PROXY_URL
+                if not proxy_url.startswith(("http://", "https://", "socks")):
+                    proxy_url = f"http://{proxy_url}"
+                clob_helpers._http_client = httpx.Client(proxy=proxy_url, timeout=15.0)
+                log(f"🌐 Proxy configured for CLOB trading: {proxy_url.split('@')[-1] if '@' in proxy_url else proxy_url}")
+            except Exception as e:
+                log(f"⚠️ Proxy setup failed: {e}")
+
         self.client = PolymarketClient()
         self.state = TradingState.load()
         self.events = EventBus()

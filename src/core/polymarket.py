@@ -447,17 +447,9 @@ class PolymarketClient:
             funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
         )
 
-        # Use explicit API keys if provided (from Polymarket account)
-        if Config.POLY_API_KEY and Config.POLY_API_SECRET and Config.POLY_PASSPHRASE:
-            from py_clob_client.clob_types import ApiCreds
-            creds = ApiCreds(
-                api_key=Config.POLY_API_KEY,
-                api_secret=Config.POLY_API_SECRET,
-                api_passphrase=Config.POLY_PASSPHRASE,
-            )
-        else:
-            # Fall back to deriving from private key
-            creds = client.create_or_derive_api_creds()
+        # Always derive API creds from private key
+        # (Dashboard API keys are tied to a different wallet and won't work here)
+        creds = client.create_or_derive_api_creds()
 
         client.set_api_creds(creds)
         return client
