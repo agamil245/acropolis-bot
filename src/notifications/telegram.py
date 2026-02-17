@@ -30,12 +30,9 @@ class TelegramNotifier:
         self._last_daily_summary = ""
         self._daily_trades: list[dict] = []
     
-    async def _get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10)
-            )
-        return self._session
+    async def _get_session(self):
+        """Legacy method — no longer used (httpx creates fresh clients)."""
+        return None
 
     async def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
         """Send a message via Telegram Bot API."""
