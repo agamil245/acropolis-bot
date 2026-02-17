@@ -437,6 +437,47 @@ class PolymarketClient:
         self._request_times.append(now)
         return True
 
+    # ─── CLOB Client Helper ─────────────────────────────────────────────
+
+    def _get_clob_client(self):
+        """Create a ClobClient with proper auth (API keys or derived creds)."""
+        from py_clob_client.client import ClobClient
+
+        client = ClobClient(
+            host=self.clob,
+            key=Config.PRIVATE_KEY or None,
+            chain_id=Config.CHAIN_ID,
+            signature_type=Config.SIGNATURE_TYPE,
+            funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+        )
+
+        # Use explicit API keys if provided (from Polymarket account)
+        if Config.POLY_API_KEY and Config.POLY_API_SECRET and Config.POLY_PASSPHRASE:
+            from py_clob_client.clob_types import ApiCreds
+            creds = ApiCreds(
+                api_key=Config.POLY_API_KEY,
+                api_secret=Config.POLY_API_SECRET,
+                api_passphrase=Config.POLY_PASSPHRASE,
+            )
+        else:
+            # Fall back to deriving from private key
+            creds = client.create_or_derive_api_creds()
+
+        client.set_api_creds(creds)
+
+        # Apply proxy if configured
+        if Config.PROXY_URL:
+            try:
+                if hasattr(client, 'client') and hasattr(client.client, '_client'):
+                    import httpx
+                    client.client._client = httpx.Client(proxy=Config.PROXY_URL, timeout=10.0)
+                if hasattr(client, 'session'):
+                    client.session.proxies = {"http": Config.PROXY_URL, "https": Config.PROXY_URL}
+            except Exception as e:
+                print(f"[polymarket] Proxy setup warning: {e}")
+
+        return client
+
     # ─── Market Fetching ──────────────────────────────────────────────────
 
     def get_market(
@@ -875,20 +916,10 @@ class PolymarketClient:
             Order response dict with orderID, or None on failure
         """
         try:
-            from py_clob_client.client import ClobClient
             from py_clob_client.clob_types import OrderArgs, OrderType
             from py_clob_client.order_builder.constants import BUY, SELL
 
-            client = ClobClient(
-                host=self.clob,
-                key=Config.PRIVATE_KEY,
-                chain_id=Config.CHAIN_ID,
-                signature_type=Config.SIGNATURE_TYPE,
-                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
-            )
-            creds = client.create_or_derive_api_creds()
-            client.set_api_creds(creds)
-
+            client = self._get_clob_client()
             order_side = BUY if side.upper() == "BUY" else SELL
             order_args = OrderArgs(
                 token_id=token_id,
@@ -909,16 +940,7 @@ class PolymarketClient:
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an open order by ID."""
         try:
-            from py_clob_client.client import ClobClient
-            client = ClobClient(
-                host=self.clob,
-                key=Config.PRIVATE_KEY,
-                chain_id=Config.CHAIN_ID,
-                signature_type=Config.SIGNATURE_TYPE,
-                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
-            )
-            creds = client.create_or_derive_api_creds()
-            client.set_api_creds(creds)
+            client = self._get_clob_client()
             client.cancel(order_id)
             return True
         except Exception as e:
@@ -928,16 +950,7 @@ class PolymarketClient:
     def cancel_all_orders(self) -> bool:
         """Cancel all open orders."""
         try:
-            from py_clob_client.client import ClobClient
-            client = ClobClient(
-                host=self.clob,
-                key=Config.PRIVATE_KEY,
-                chain_id=Config.CHAIN_ID,
-                signature_type=Config.SIGNATURE_TYPE,
-                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
-            )
-            creds = client.create_or_derive_api_creds()
-            client.set_api_creds(creds)
+            client = self._get_clob_client()
             client.cancel_all()
             return True
         except Exception as e:
@@ -947,16 +960,7 @@ class PolymarketClient:
     def get_open_orders(self, market_id: Optional[str] = None) -> list[dict]:
         """Get all open orders, optionally filtered by market."""
         try:
-            from py_clob_client.client import ClobClient
-            client = ClobClient(
-                host=self.clob,
-                key=Config.PRIVATE_KEY,
-                chain_id=Config.CHAIN_ID,
-                signature_type=Config.SIGNATURE_TYPE,
-                funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
-            )
-            creds = client.create_or_derive_api_creds()
-            client.set_api_creds(creds)
+            client = self._get_clob_client()
 
             if market_id:
                 orders = client.get_orders(market=market_id)
@@ -970,14 +974,7 @@ class PolymarketClient:
     def get_order_status(self, order_id: str) -> Optional[dict]:
         """Get status of a specific order."""
         try:
-            from py_clob_client.client import ClobClient
-            client = ClobClient(
-                host=self.clob,
-                key=Config.PRIVATE_KEY,
-                chain_id=Config.CHAIN_ID,
-            )
-            creds = client.create_or_derive_api_creds()
-            client.set_api_creds(creds)
+            client = self._get_clob_client()
             return client.get_order(order_id)
         except Exception as e:
             print(f"[polymarket] Get order status failed: {e}")

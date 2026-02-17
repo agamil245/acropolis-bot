@@ -163,6 +163,11 @@ class Config:
     FUNDER_ADDRESS: str = os.getenv("FUNDER_ADDRESS", "")
     SIGNATURE_TYPE: int = int(os.getenv("SIGNATURE_TYPE", "0"))
 
+    # ===== POLYMARKET API KEYS (from polymarket.com account) =====
+    POLY_API_KEY: str = os.getenv("POLY_API_KEY", "")
+    POLY_API_SECRET: str = os.getenv("POLY_API_SECRET", "")
+    POLY_PASSPHRASE: str = os.getenv("POLY_PASSPHRASE", "")
+
     # ===== POLYMARKET APIs =====
     GAMMA_API = "https://gamma-api.polymarket.com"
     CLOB_API = "https://clob.polymarket.com"
@@ -372,8 +377,8 @@ class Config:
         """Validate configuration and return list of warnings."""
         warnings = []
 
-        if not cls.PAPER_TRADE and not cls.PRIVATE_KEY:
-            warnings.append("CRITICAL: Live trading enabled but no PRIVATE_KEY set!")
+        if not cls.PAPER_TRADE and not cls.PRIVATE_KEY and not cls.POLY_API_KEY:
+            warnings.append("CRITICAL: Live trading enabled but no PRIVATE_KEY or POLY_API_KEY set!")
 
         if cls.SIGNATURE_TYPE == 1 and not cls.FUNDER_ADDRESS:
             warnings.append("CRITICAL: Proxy wallet (SIGNATURE_TYPE=1) requires FUNDER_ADDRESS")

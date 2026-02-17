@@ -197,7 +197,7 @@ class BotEngine:
         Config.print_summary()
 
         # In live mode, fetch actual Polymarket balance
-        if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
+        if not Config.PAPER_TRADE and (Config.PRIVATE_KEY or Config.POLY_API_KEY):
             try:
                 balance = self._get_polymarket_balance()
                 if balance and balance > 0:
@@ -231,21 +231,20 @@ class BotEngine:
     def _get_polymarket_balance(self) -> float | None:
         """Get USDC balance from Polymarket CLOB (deposited funds)."""
         try:
-            if hasattr(self, 'trader') and hasattr(self.trader, 'client') and self.trader.client:
-                from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
-                result = self.trader.client.get_balance_allowance(
-                    BalanceAllowanceParams(
-                        asset_type=AssetType.COLLATERAL,
-                        signature_type=Config.SIGNATURE_TYPE,
-                    )
+            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+            # Use the shared client helper from PolymarketClient
+            client = self.client._get_clob_client()
+            result = client.get_balance_allowance(
+                BalanceAllowanceParams(
+                    asset_type=AssetType.COLLATERAL,
+                    signature_type=Config.SIGNATURE_TYPE,
                 )
-                if result and 'balance' in result:
-                    raw = float(result['balance'])
-                    # Balance might be in wei (6 decimals) or already in USDC
-                    return raw / 1e6 if raw > 1000 else raw
+            )
+            if result and 'balance' in result:
+                raw = float(result['balance'])
+                return raw / 1e6 if raw > 1000 else raw
         except Exception as e:
             log(f"⚠️ Polymarket balance query failed: {e}")
-        # No fallback to on-chain — Polymarket funds are in their contract, not wallet
         return None
 
     def _init_strategies(self):
@@ -554,7 +553,7 @@ class BotEngine:
                         }))
 
                 # Refresh Polymarket balance in live mode (every 60s)
-                if not Config.PAPER_TRADE and Config.PRIVATE_KEY:
+                if not Config.PAPER_TRADE and (Config.PRIVATE_KEY or Config.POLY_API_KEY):
                     now = time.time()
                     if now - getattr(self, '_last_balance_check', 0) > 60:
                         try:
