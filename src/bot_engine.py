@@ -245,14 +245,8 @@ class BotEngine:
                     return raw / 1e6 if raw > 1000 else raw
         except Exception as e:
             log(f"⚠️ Polymarket balance query failed: {e}")
-        # Fallback to on-chain wallet balance
-        try:
-            from src.core.wallet import get_usdc_balance
-            from eth_account import Account
-            address = Account.from_key(Config.PRIVATE_KEY).address
-            return get_usdc_balance(address)
-        except Exception:
-            return None
+        # No fallback to on-chain — Polymarket funds are in their contract, not wallet
+        return None
 
     def _init_strategies(self):
         """Initialize strategy modules."""
