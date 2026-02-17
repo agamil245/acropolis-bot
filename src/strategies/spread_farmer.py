@@ -535,8 +535,8 @@ class SpreadFarmer:
     def _record_spread_trade(self, cycle: SpreadCycle, outcome: str, fill_type: str):
         """Record a spread cycle as a trade in the main trading state."""
         from src.core.trader import Trade
-        import time
-        from datetime import datetime as _time
+        import time as _time_mod
+        from datetime import datetime as _dt
 
         # Determine the filled side(s) and direction
         if fill_type == "full_fill":
@@ -573,7 +573,7 @@ class SpreadFarmer:
         trade.outcome = outcome
         trade.won = cycle.pnl > 0
         trade.net_pnl = cycle.pnl
-        trade.settled_at = int(_time.time() * 1000)
+        trade.settled_at = int(_time_mod.time() * 1000)
         trade.exit_price = 1.0 if trade.won else 0.0
 
         self._trading_state.record_settled_trade(trade)
