@@ -141,8 +141,11 @@ class SpreadFarmer:
 
         # Config
         self.spread_offset: float = Config.SPREAD_OFFSET
-        self.order_size: float = Config.SPREAD_ORDER_SIZE
+        self.base_order_size: float = Config.SPREAD_ORDER_SIZE  # only used as fallback
         self.refresh_interval: float = Config.SPREAD_REFRESH_INTERVAL
+
+        # Profit reserve (untouchable savings)
+        self.reserved_profits: float = 0.0
 
         # State
         self.active_cycles: list[SpreadCycle] = []
@@ -161,6 +164,46 @@ class SpreadFarmer:
 
         # Main trading state reference (set by bot engine for trade logging)
         self._trading_state = None
+
+    # ── Dynamic Sizing & Reserves ─────────────────────────────────────────
+
+    def get_tradeable_bankroll(self) -> float:
+        """Bankroll minus reserved profits."""
+        if self._trading_state:
+            return self._trading_state.bankroll - self.reserved_profits
+        return Config.INITIAL_BANKROLL - self.reserved_profits
+
+    def get_dynamic_order_size(self) -> float:
+        """25% of tradeable bankroll per leg. No cap — scales with growth."""
+        tradeable = self.get_tradeable_bankroll()
+        size = tradeable * 0.25
+        # Minimum $5 per leg to be worth the trade
+        return max(5.0, size)
+
+    def get_reserve_rate(self) -> float:
+        """Reserve rate based on total bankroll size."""
+        if not self._trading_state:
+            return 0.0
+        bankroll = self._trading_state.bankroll
+        if bankroll < 200:
+            return 0.0    # Reinvest everything — need to grow
+        elif bankroll < 500:
+            return 0.10   # 10% of profits reserved
+        elif bankroll < 1000:
+            return 0.20   # 20% reserved
+        else:
+            return 0.30   # 30% reserved
+
+    def apply_reserve(self, profit: float):
+        """Move a portion of profit into reserves after a settled cycle."""
+        if profit <= 0:
+            return
+        rate = self.get_reserve_rate()
+        reserve_amount = profit * rate
+        self.reserved_profits += reserve_amount
+        if reserve_amount > 0:
+            print(f"[SPREAD] 🏦 Reserved ${reserve_amount:.4f} "
+                  f"(total reserves: ${self.reserved_profits:.2f})")
 
     # ── Order Management ──────────────────────────────────────────────────
 
@@ -308,8 +351,9 @@ class SpreadFarmer:
             created_at=time.time(),
         )
 
-        # Apply volatility-adjusted size
-        adjusted_size = self.order_size * vol_size_multiplier
+        # Dynamic sizing: 25% of tradeable bankroll per leg, no cap
+        dynamic_size = self.get_dynamic_order_size()
+        adjusted_size = dynamic_size * vol_size_multiplier
 
         # Place YES order
         if market.up_token_id:
@@ -455,6 +499,8 @@ class SpreadFarmer:
             cycle.pnl = 1.0 - cycle.total_cost
             self.stats.total_pnl += cycle.pnl
             self.stats.best_cycle_pnl = max(self.stats.best_cycle_pnl, cycle.pnl)
+            # Reserve a portion of profit
+            self.apply_reserve(cycle.pnl)
             # Log to main trading state
             if self._trading_state:
                 self._record_spread_trade(cycle, outcome, "full_fill")
@@ -557,7 +603,10 @@ class SpreadFarmer:
             "override_active": self._override_active,
             "config": {
                 "spread_offset": self.spread_offset,
-                "order_size": self.order_size,
+                "dynamic_order_size": round(self.get_dynamic_order_size(), 2),
+                "tradeable_bankroll": round(self.get_tradeable_bankroll(), 2),
+                "reserved_profits": round(self.reserved_profits, 2),
+                "reserve_rate": f"{self.get_reserve_rate()*100:.0f}%",
                 "refresh_interval": self.refresh_interval,
             },
             **self.stats.to_dict(),
