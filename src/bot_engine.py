@@ -229,15 +229,17 @@ class BotEngine:
         """Get USDC balance from Polymarket CLOB (deposited funds)."""
         try:
             if hasattr(self, 'trader') and hasattr(self.trader, 'client') and self.trader.client:
-                from py_clob_client.clob_types import BalanceAllowanceParams
+                from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
                 result = self.trader.client.get_balance_allowance(
                     BalanceAllowanceParams(
-                        asset_type=0,  # USDC collateral
+                        asset_type=AssetType.COLLATERAL,
                         signature_type=Config.SIGNATURE_TYPE,
                     )
                 )
                 if result and 'balance' in result:
-                    return float(result['balance']) / 1e6  # USDC has 6 decimals
+                    raw = float(result['balance'])
+                    # Balance might be in wei (6 decimals) or already in USDC
+                    return raw / 1e6 if raw > 1000 else raw
         except Exception as e:
             log(f"⚠️ Polymarket balance query failed: {e}")
         # Fallback to on-chain wallet balance
