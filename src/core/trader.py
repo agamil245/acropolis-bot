@@ -1126,18 +1126,25 @@ class LiveTrader:
                     chain_id=Config.CHAIN_ID,
                 )
 
-            # Retry API cred derivation (proxy can be flaky on first request)
+            # Derive API creds WITHOUT proxy (proxy is flaky on startup)
+            import httpx
+            import py_clob_client.http_helpers.helpers as clob_helpers
+            original_client = clob_helpers._http_client
+            # Temporarily use direct connection for auth
+            clob_helpers._http_client = httpx.Client()
             creds = None
-            for attempt in range(5):
+            for attempt in range(3):
                 try:
                     creds = self.client.create_or_derive_api_creds()
                     break
                 except Exception as e:
-                    print(f"[trader] API creds attempt {attempt+1}/5 failed: {e}")
+                    print(f"[trader] API creds attempt {attempt+1}/3 failed: {e}")
                     import time as _t
                     _t.sleep(2)
+            # Restore proxy client for trading
+            clob_helpers._http_client = original_client
             if not creds:
-                raise RuntimeError("Failed to derive API creds after 5 attempts")
+                raise RuntimeError("Failed to derive API creds after 3 attempts")
             self.client.set_api_creds(creds)
 
             wallet_type = "proxy" if Config.SIGNATURE_TYPE == 1 else "EOA"
