@@ -329,6 +329,11 @@ class MomentumStrategy:
                 print(f"[MOMENTUM] ⚠️ Can't place live order: client={'yes' if poly_client else 'no'}, token={'yes' if token_id else 'no'}")
                 return None
             
+            # Polymarket minimum is 5 shares
+            if shares < 5:
+                shares = 5
+                size = shares * buy_price  # recalculate cost
+            
             try:
                 result = poly_client.place_limit_order(
                     token_id=token_id,
@@ -338,10 +343,12 @@ class MomentumStrategy:
                 )
                 if not result:
                     print(f"[MOMENTUM] ❌ Live order returned None — NOT tracking as trade")
+                    self._already_bet_this_window = True  # Don't spam retries
                     return None
                 print(f"[MOMENTUM] ✅ Live order placed: {result}")
             except Exception as e:
                 print(f"[MOMENTUM] ❌ Live order FAILED: {e} — NOT tracking as trade")
+                self._already_bet_this_window = True  # Don't spam retries
                 return None
         
         # Only mark window as bet AFTER successful order (or in paper mode)

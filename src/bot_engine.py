@@ -480,18 +480,16 @@ class BotEngine:
                         
                         signal = await self._momentum.check_momentum(asset)
                         if signal:
-                            # Notify signal
-                            if getattr(self, '_telegram', None):
-                                await self._telegram.notify_momentum_signal(
-                                    asset, signal.direction, signal.price_change_pct,
-                                    signal.confidence, self._momentum._current_window_ts or 0,
-                                )
                             bet = await self._momentum.place_directional_bet(
                                 market, signal, paper=Config.PAPER_TRADE,
                                 poly_client=self.client if not Config.PAPER_TRADE else None,
                             )
-                            # Notify trade opened
+                            # Only notify if order actually went through
                             if bet and self._telegram:
+                                await self._telegram.notify_momentum_signal(
+                                    asset, signal.direction, signal.price_change_pct,
+                                    signal.confidence, self._momentum._current_window_ts or 0,
+                                )
                                 await self._telegram.notify_trade_opened(
                                     strategy="momentum",
                                     side=bet["side"],
