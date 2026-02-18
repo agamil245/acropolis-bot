@@ -1111,20 +1111,16 @@ class LiveTrader:
         try:
             from py_clob_client.client import ClobClient
 
-            if Config.SIGNATURE_TYPE == 1:
-                self.client = ClobClient(
-                    host=Config.CLOB_API,
-                    key=Config.PRIVATE_KEY,
-                    chain_id=Config.CHAIN_ID,
-                    signature_type=1,
-                    funder=Config.FUNDER_ADDRESS,
-                )
-            else:
-                self.client = ClobClient(
-                    host=Config.CLOB_API,
-                    key=Config.PRIVATE_KEY,
-                    chain_id=Config.CHAIN_ID,
-                )
+            pk = Config.PRIVATE_KEY
+            if pk and not pk.startswith('0x'):
+                pk = '0x' + pk
+            self.client = ClobClient(
+                host=Config.CLOB_API,
+                key=pk,
+                chain_id=Config.CHAIN_ID,
+                signature_type=Config.SIGNATURE_TYPE,
+                funder=Config.FUNDER_ADDRESS if Config.FUNDER_ADDRESS else None,
+            )
 
             # Always derive API creds from private key
             creds = None

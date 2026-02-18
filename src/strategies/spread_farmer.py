@@ -244,10 +244,10 @@ class SpreadFarmer:
 
                 live_client = ClobClient(
                     host=Config.CLOB_API,
-                    key=Config.PRIVATE_KEY,
+                    key=Config.PRIVATE_KEY if Config.PRIVATE_KEY.startswith('0x') else '0x' + Config.PRIVATE_KEY,
                     chain_id=Config.CHAIN_ID,
                     signature_type=Config.SIGNATURE_TYPE,
-                    funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+                    funder=Config.FUNDER_ADDRESS if Config.FUNDER_ADDRESS else None,
                 )
                 creds = live_client.create_or_derive_api_creds()
                 live_client.set_api_creds(creds)
@@ -280,8 +280,10 @@ class SpreadFarmer:
                 from py_clob_client.client import ClobClient
                 live_client = ClobClient(
                     host=Config.CLOB_API,
-                    key=Config.PRIVATE_KEY,
+                    key=Config.PRIVATE_KEY if Config.PRIVATE_KEY.startswith('0x') else '0x' + Config.PRIVATE_KEY,
                     chain_id=Config.CHAIN_ID,
+                    signature_type=Config.SIGNATURE_TYPE,
+                    funder=Config.FUNDER_ADDRESS if Config.FUNDER_ADDRESS else None,
                 )
                 creds = live_client.create_or_derive_api_creds()
                 live_client.set_api_creds(creds)
@@ -389,21 +391,28 @@ class SpreadFarmer:
 
         results = await asyncio.gather(yes_coro, no_coro, return_exceptions=True)
 
-        if market.up_token_id and not isinstance(results[0], Exception):
+        yes_ok = market.up_token_id and not isinstance(results[0], Exception) and results[0] is not None
+        no_ok = market.down_token_id and not isinstance(results[1], Exception) and results[1] is not None
+
+        if yes_ok:
             cycle.yes_order = results[0]
-        if market.down_token_id and not isinstance(results[1], Exception):
+        if no_ok:
             cycle.no_order = results[1]
+
+        # Only track cycle if at least one order actually went through
+        if not yes_ok and not no_ok:
+            print(f"[SPREAD] ❌ Both legs failed on {market.slug} — cycle NOT created")
+            return None
 
         self.active_cycles.append(cycle)
         self.stats.cycles_created += 1
 
         edge_pct = (1.0 - (yes_price + no_price)) * 100
-        msg = (f"[SPREAD] 🏠 Posted: YES@{yes_price:.4f} + NO@{no_price:.4f} "
+        yes_tag = "✅" if yes_ok else "❌"
+        no_tag = "✅" if no_ok else "❌"
+        msg = (f"[SPREAD] 🏠 Posted: {yes_tag}YES@{yes_price:.4f} + {no_tag}NO@{no_price:.4f} "
                f"= {yes_price + no_price:.4f} ({edge_pct:.1f}% edge) on {market.slug}")
         print(msg)
-        with open("/tmp/spread_trades.log", "a") as _f:
-            _f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:12]} {msg}\n")
-            _f.flush()
 
         return cycle
 

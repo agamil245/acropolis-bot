@@ -439,12 +439,15 @@ class PolymarketClient:
         """Create a ClobClient with proper auth (API keys or derived creds)."""
         from py_clob_client.client import ClobClient
 
+        pk = Config.PRIVATE_KEY
+        if pk and not pk.startswith('0x'):
+            pk = '0x' + pk
         client = ClobClient(
             host=self.clob,
-            key=Config.PRIVATE_KEY or None,
+            key=pk or None,
             chain_id=Config.CHAIN_ID,
             signature_type=Config.SIGNATURE_TYPE,
-            funder=Config.FUNDER_ADDRESS if Config.SIGNATURE_TYPE == 1 else None,
+            funder=Config.FUNDER_ADDRESS if Config.FUNDER_ADDRESS else None,
         )
 
         # Always derive API creds from private key
