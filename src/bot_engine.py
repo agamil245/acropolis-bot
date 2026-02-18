@@ -203,12 +203,12 @@ class BotEngine:
                     self.state.peak_bankroll = max(self.state.peak_bankroll, balance)
                     log(f"💰 Polymarket balance: ${balance:.2f} USDC")
                 else:
-                    self.state.bankroll = Config.INITIAL_BANKROLL
-                    self.state.peak_bankroll = Config.INITIAL_BANKROLL
-                    log(f"💰 Using configured bankroll: ${Config.INITIAL_BANKROLL:.2f} (CLOB balance query returned 0 — funds may be in positions)")
+                    self.state.bankroll = 0.0
+                    self.state.peak_bankroll = 0.0
+                    log(f"💰 Polymarket CLOB balance: $0.00 — wallet needs funding to trade")
             except Exception as e:
-                self.state.bankroll = Config.INITIAL_BANKROLL
-                log(f"⚠️ Balance check failed: {e} — using ${Config.INITIAL_BANKROLL:.2f}")
+                self.state.bankroll = 0.0
+                log(f"⚠️ Balance check failed: {e} — bankroll set to $0.00 until balance confirmed")
 
         # Save starting bankroll for PnL calculation
         self._starting_bankroll = self.state.bankroll
@@ -492,7 +492,8 @@ class BotEngine:
                                     signal.confidence, self._momentum._current_window_ts or 0,
                                 )
                             bet = await self._momentum.place_directional_bet(
-                                market, signal, paper=Config.PAPER_TRADE
+                                market, signal, paper=Config.PAPER_TRADE,
+                                poly_client=self.client if not Config.PAPER_TRADE else None,
                             )
                             # Notify trade opened
                             if bet and self._telegram:

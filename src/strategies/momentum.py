@@ -284,20 +284,25 @@ class MomentumStrategy:
         market: "Market",
         signal: MomentumSignal,
         paper: bool = True,
+        poly_client=None,
     ) -> Optional[dict]:
-        """Place a directional bet based on momentum signal."""
+        """Place a directional bet based on momentum signal.
+        
+        In live mode (paper=False), places a real order via poly_client.
+        Only tracks the bet if the order actually succeeds.
+        """
         if self._already_bet_this_window:
             return None
-        
-        self._already_bet_this_window = True
         
         # Determine which side to buy
         if signal.direction == "up":
             buy_side = "YES"
             buy_price = market.up_price if market.up_price < 0.60 else 0.50
+            token_id = market.up_token_id
         else:
             buy_side = "NO"
             buy_price = market.down_price if market.down_price < 0.60 else 0.50
+            token_id = market.down_token_id
         
         # Dynamic bet size: scale between min and max based on confidence
         from src.config import Config
@@ -315,6 +320,33 @@ class MomentumStrategy:
             bankroll_cap = self._trading_state.bankroll * max_pct
             size = min(size, bankroll_cap)
         
+        # Number of shares
+        shares = size / buy_price if buy_price > 0 else 0
+        
+        # In LIVE mode, place real order first — only track if it succeeds
+        if not paper:
+            if not poly_client or not token_id:
+                print(f"[MOMENTUM] ⚠️ Can't place live order: client={'yes' if poly_client else 'no'}, token={'yes' if token_id else 'no'}")
+                return None
+            
+            try:
+                result = poly_client.place_limit_order(
+                    token_id=token_id,
+                    price=round(buy_price, 2),
+                    size=round(shares, 2),
+                    side="BUY",
+                )
+                if not result:
+                    print(f"[MOMENTUM] ❌ Live order returned None — NOT tracking as trade")
+                    return None
+                print(f"[MOMENTUM] ✅ Live order placed: {result}")
+            except Exception as e:
+                print(f"[MOMENTUM] ❌ Live order FAILED: {e} — NOT tracking as trade")
+                return None
+        
+        # Only mark window as bet AFTER successful order (or in paper mode)
+        self._already_bet_this_window = True
+        
         bet = {
             "market_slug": market.slug,
             "window_ts": self._current_window_ts,
@@ -325,19 +357,17 @@ class MomentumStrategy:
             "placed_at": time.time(),
             "settled": False,
             "pnl": 0.0,
+            "live": not paper,
         }
         
         self.active_bets.append(bet)
         self.stats.trades_taken += 1
         
-        msg = (f"[MOMENTUM] 💰 BET: {buy_side}@{buy_price:.4f} "
+        mode_tag = "LIVE" if not paper else "PAPER"
+        msg = (f"[MOMENTUM] 💰 {mode_tag} BET: {buy_side}@{buy_price:.4f} "
                f"${size:.2f} on {market.slug} "
                f"(momentum: {signal.price_change_pct:+.4f}%)")
         print(msg)
-        
-        with open("/tmp/spread_trades.log", "a") as _f:
-            _f.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:12]} {msg}\n")
-            _f.flush()
         
         return bet
     
