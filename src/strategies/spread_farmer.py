@@ -265,6 +265,12 @@ class SpreadFarmer:
                 print(f"[SPREAD] ❌ Live order failed: {e}")
                 return None
 
+        # In live mode, only track if we got a real order ID back
+        if not Config.PAPER_TRADE and order.order_id.startswith("sf_"):
+            # Still has our local ID = order never reached Polymarket
+            print(f"[SPREAD] ⚠️ Order has no Polymarket ID — NOT tracking")
+            return None
+
         self.open_orders[order.order_id] = order
         self.stats.orders_placed += 1
         return order
@@ -444,10 +450,15 @@ class SpreadFarmer:
                 # Live mode: poll CLOB
                 try:
                     from py_clob_client.client import ClobClient
+                    pk = Config.PRIVATE_KEY
+                    if pk and not pk.startswith('0x'):
+                        pk = '0x' + pk
                     live_client = ClobClient(
                         host=Config.CLOB_API,
-                        key=Config.PRIVATE_KEY,
+                        key=pk,
                         chain_id=Config.CHAIN_ID,
+                        signature_type=Config.SIGNATURE_TYPE,
+                        funder=Config.FUNDER_ADDRESS if Config.FUNDER_ADDRESS else None,
                     )
                     creds = live_client.create_or_derive_api_creds()
                     live_client.set_api_creds(creds)
