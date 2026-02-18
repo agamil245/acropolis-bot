@@ -445,28 +445,22 @@ class BotEngine:
     # ─── Arbitrage Strategy Loop ──────────────────────────────────────────
 
     async def _arbitrage_loop(self):
-        """Hybrid strategy: spread farming + legacy arb scanning."""
-        log("[HYBRID] ⚡ Hybrid strategy active (Layer 1: Spread Farmer)")
+        """Main trading loop — MOMENTUM ONLY (spread farmer disabled)."""
+        log("[MOMENTUM] ⚡ Momentum-only mode active")
 
         while self.running:
             try:
                 can_trade, reason = self.state.can_trade()
                 if not can_trade:
-                    log(f"[HYBRID] ⏸️ Can't trade: {reason}")
+                    log(f"[MOMENTUM] ⏸️ Can't trade: {reason}")
                     await asyncio.sleep(5)
                     continue
 
                 # Get all active markets
                 markets = self.client.get_all_active_markets()
 
-                # Tick spread farmer (Layer 1)
-                if self._arb_strategy:
-                    sf = self._arb_strategy.spread_farmer
-                    active_slugs = {c.market_slug for c in sf.active_cycles if not c.settled}
-                    new_markets = [m for m in markets if m.slug not in active_slugs and m.accepting_orders and not m.closed]
-                    if new_markets:
-                        log(f"[SPREAD] 📡 {len(markets)} markets, {len(sf.active_cycles)} active cycles, {len(new_markets)} new to post")
-                    await self._arb_strategy.tick_spread_farmer(markets)
+                # Spread farmer DISABLED — was losing money on partial fills
+                # TODO: re-enable when strategy is fixed
 
                 # Tick momentum strategy (directional 2x bets)
                 if getattr(self, '_momentum', None) and markets:
@@ -508,49 +502,7 @@ class BotEngine:
                                 )
                             break  # One directional bet per check cycle
 
-                # Legacy arb scan for mispriced markets
-                signals = self._arb_strategy.evaluate_all_markets(markets, self.state.bankroll)
-
-                for signal in signals[:3]:
-                    if self._arb_strategy.current_exposure >= Config.ARB_MAX_EXPOSURE:
-                        break
-
-                    ts_key = signal.market.timestamp
-                    if ts_key in self._bet_timestamps["arbitrage"]:
-                        continue
-
-                    if Config.USE_KELLY:
-                        amount = kelly_size(
-                            signal.confidence,
-                            1.0 / signal.market.get_price(signal.direction) if signal.market.get_price(signal.direction) > 0 else 2.0,
-                            self.state.bankroll,
-                        )
-                    else:
-                        amount = fixed_bet_size(self.state.bankroll)
-
-                    amount = min(amount, Config.ARB_MAX_EXPOSURE - self._arb_strategy.current_exposure)
-                    amount = max(Config.ARB_MIN_BET, amount)
-
-                    trade = self.trader.place_bet(
-                        market=signal.market,
-                        direction=signal.direction,
-                        amount=amount,
-                        strategy="arbitrage",
-                        arbitrage_edge=signal.edge_pct,
-                        confidence=signal.confidence,
-                    )
-
-                    if trade:
-                        self._bet_timestamps["arbitrage"].add(ts_key)
-                        self._arb_strategy.update_exposure(trade.amount)
-                        self.events.emit(Event(EventType.TRADE_PLACED, {
-                            "trade_id": trade.id,
-                            "strategy": "arbitrage",
-                            "direction": trade.direction,
-                            "amount": trade.amount,
-                            "edge_pct": signal.edge_pct,
-                            "source": signal.source,
-                        }))
+                # Legacy arb scan DISABLED — momentum only
 
                 # Refresh Polymarket balance in live mode (every 60s)
                 if not Config.PAPER_TRADE and (Config.PRIVATE_KEY or Config.POLY_API_KEY):
