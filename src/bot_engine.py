@@ -200,7 +200,8 @@ class BotEngine:
                 balance = self._get_polymarket_balance()
                 if balance and balance > 0:
                     self.state.bankroll = balance
-                    self.state.peak_bankroll = max(self.state.peak_bankroll, balance)
+                    # Reset peak to actual balance — don't carry over stale peaks
+                    self.state.peak_bankroll = balance
                     log(f"💰 Polymarket balance: ${balance:.2f} USDC")
                 else:
                     self.state.bankroll = 0.0
